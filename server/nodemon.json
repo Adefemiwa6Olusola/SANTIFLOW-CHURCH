@@ -1,0 +1,8 @@
+{
+  "ignore": [
+    "data/**",
+    "data/*",
+    "test_backend.js",
+    "*.tmp"
+  ]
+}
