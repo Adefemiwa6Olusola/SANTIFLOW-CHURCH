@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: sanctiflow-backend
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: GEMINI_API_KEY_PRIMARY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: JWT_SECRET
+        value: super_secret_church_assistant_key_2026
+      - key: NODE_ENV
+        value: production
