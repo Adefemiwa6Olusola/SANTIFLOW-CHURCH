@@ -5,6 +5,7 @@ import speechService from '../../services/speechService';
 
 export default function VoicePanel() {
   const voiceStatus = useAppStore(s => s.voiceStatus);
+  const aiStatus = useAppStore(s => s.aiStatus);
   const transcriptEntries = useAppStore(s => s.transcriptEntries);
   const interimText = useAppStore(s => s.interimText);
   const sessionStartTime = useAppStore(s => s.sessionStartTime);
@@ -17,6 +18,7 @@ export default function VoicePanel() {
   
   const scrollRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
+  const [btnHovered, setBtnHovered] = useState(false);
   
   // Audio configuration & level meter states
   const [devices, setDevices] = useState([]);
@@ -127,11 +129,11 @@ export default function VoicePanel() {
       return;
     }
 
-    if (voiceStatus === 'listening') {
-      console.log('[VoicePanel] User clicked to Pause listening');
-      speechService.pause();
+    if (voiceStatus === 'listening' || voiceStatus === 'connecting' || voiceStatus === 'reconnecting') {
+      console.log('[VoicePanel] Stopping recording');
+      speechService.stop();
     } else {
-      console.log('[VoicePanel] User clicked to Start listening with device:', selectedDevice);
+      console.log('[VoicePanel] Starting recording with device:', selectedDevice);
       setErrorMessage('');
       await speechService.start(selectedDevice || null);
     }
@@ -160,7 +162,27 @@ export default function VoicePanel() {
     return `${m}:${s}`;
   };
 
-  const isActive = voiceStatus === 'listening';
+  const isListeningActive = voiceStatus === 'listening';
+  const isConnecting = voiceStatus === 'connecting' || voiceStatus === 'reconnecting';
+  const isProcessing = aiStatus === 'processing';
+  const isError = voiceStatus === 'error' || aiStatus === 'error';
+  const isPaused = voiceStatus === 'paused';
+
+  const statusColor = 
+    isError ? '#ef4444' :
+    isProcessing ? '#a855f7' :
+    isListeningActive ? '#22c55e' :
+    isConnecting ? '#e2a13c' :
+    isPaused ? '#f5c842' : '#64748b';
+
+  const statusText =
+    isError ? 'Error' :
+    isProcessing ? 'Processing' :
+    isListeningActive ? 'Listening' :
+    isConnecting ? (voiceStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting...') :
+    isPaused ? 'Paused' : 'Ready';
+
+  const isActive = isListeningActive;
   const wordCount = transcriptEntries.reduce((acc, e) => acc + (e.text?.split(' ').length || 0), 0);
 
   return (
@@ -180,24 +202,15 @@ export default function VoicePanel() {
           {/* Animated pulsing status dot */}
           <motion.span
             animate={
-              voiceStatus === 'listening' || voiceStatus === 'connecting' || voiceStatus === 'reconnecting'
+              isListeningActive || isConnecting || isProcessing
                 ? { scale: [1, 1.25, 1], opacity: [0.8, 1, 0.8] }
                 : {}
             }
             transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
             style={{
               display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
-              background: 
-                voiceStatus === 'listening' ? '#22c55e' :
-                (voiceStatus === 'connecting' || voiceStatus === 'reconnecting') ? '#e2a13c' :
-                voiceStatus === 'paused' ? '#f5c842' :
-                voiceStatus === 'error' ? '#ef4444' : '#64748b',
-              boxShadow: `0 0 10px ${
-                voiceStatus === 'listening' ? '#22c55e' :
-                (voiceStatus === 'connecting' || voiceStatus === 'reconnecting') ? '#e2a13c' :
-                voiceStatus === 'paused' ? '#f5c842' :
-                voiceStatus === 'error' ? '#ef4444' : '#64748b'
-              }`,
+              background: statusColor,
+              boxShadow: `0 0 10px ${statusColor}`,
               transition: 'background 0.3s ease'
             }}
           />
@@ -205,15 +218,23 @@ export default function VoicePanel() {
           
           {/* Current Status Badge */}
           <span style={{
-            fontSize: 10, color: 'rgba(255,255,255,0.5)',
-            background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 5,
-            fontWeight: 600, border: '1px solid rgba(255,255,255,0.06)'
+            fontSize: 10, color: 'rgba(255,255,255,0.7)',
+            background: 
+              isError ? 'rgba(239,68,68,0.12)' :
+              isProcessing ? 'rgba(168,85,247,0.12)' :
+              isListeningActive ? 'rgba(34,197,94,0.12)' :
+              isConnecting ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.04)',
+            padding: '2px 8px', borderRadius: 5,
+            fontWeight: 600, 
+            border: `1px solid ${
+              isError ? 'rgba(239,68,68,0.2)' :
+              isProcessing ? 'rgba(168,85,247,0.2)' :
+              isListeningActive ? 'rgba(34,197,94,0.2)' :
+              isConnecting ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.06)'
+            }`,
+            transition: 'all 0.3s ease'
           }}>
-            {voiceStatus === 'listening' ? 'Listening' :
-             voiceStatus === 'connecting' ? 'Connecting...' :
-             voiceStatus === 'reconnecting' ? 'Reconnecting (Recovery)' :
-             voiceStatus === 'paused' ? 'Paused' :
-             voiceStatus === 'error' ? 'Error' : 'Stopped'}
+            {statusText}
           </span>
 
           {isActive && (
@@ -237,22 +258,112 @@ export default function VoicePanel() {
               onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.04)'}
             >Clear</button>
           )}
-          <button
+          <motion.button
             onClick={handleToggle}
+            onMouseEnter={() => setBtnHovered(true)}
+            onMouseLeave={() => setBtnHovered(false)}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            animate={
+              isListeningActive
+                ? {
+                    background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+                    boxShadow: [
+                      '0 0 12px rgba(239, 68, 68, 0.3)',
+                      '0 0 24px rgba(239, 68, 68, 0.6)',
+                      '0 0 12px rgba(239, 68, 68, 0.3)'
+                    ],
+                  }
+                : isConnecting
+                ? {
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    boxShadow: '0 0 12px rgba(245, 158, 11, 0.3)',
+                  }
+                : {
+                    background: 'linear-gradient(135deg, #f5c842, #e07b39)',
+                    boxShadow: '0 0 12px rgba(245, 200, 66, 0.2)',
+                  }
+            }
+            transition={
+              isListeningActive
+                ? {
+                    boxShadow: {
+                      repeat: Infinity,
+                      duration: 2,
+                      ease: 'easeInOut',
+                    },
+                    background: { duration: 0.3 }
+                  }
+                : { duration: 0.3 }
+            }
             style={{
-              padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              fontWeight: 700, fontSize: 12, letterSpacing: '0.03em',
-              background: isActive
-                ? 'rgba(239,68,68,0.2)'
-                : 'linear-gradient(135deg, #f5c842, #e07b39)',
-              color: isActive ? '#ef4444' : '#1a1000',
-              boxShadow: isActive ? 'none' : '0 0 16px rgba(245,200,66,0.3)',
-              transition: 'all 0.2s ease',
+              padding: '8px 20px',
+              borderRadius: 8,
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: '0.03em',
+              color: isListeningActive || isConnecting ? '#ffffff' : '#1a1000',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              outline: 'none',
+              minWidth: 140,
+              height: 36,
             }}
             id="voice-toggle-btn"
           >
-            {isActive ? '⏸ Pause' : '🎤 Listen'}
-          </button>
+            {/* Left-side Icon depending on status */}
+            {isListeningActive && (
+              <>
+                {/* Pulsing Recording Indicator Dot */}
+                <div style={{ position: 'relative', width: 8, height: 8, marginRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <motion.div
+                    animate={{ scale: [1, 2, 1], opacity: [0.8, 0, 0.8] }}
+                    transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                    style={{ position: 'absolute', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ffffff' }}
+                  />
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: '#ffffff' }} />
+                </div>
+                
+                {/* Audio Level Waveform Bar Indicator */}
+                <div style={{ display: 'flex', gap: '2px', alignItems: 'center', height: '14px', marginRight: 8 }}>
+                  <motion.div animate={{ height: Math.max(3, audioLevel * 14) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
+                  <motion.div animate={{ height: Math.max(3, audioLevel * 20) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
+                  <motion.div animate={{ height: Math.max(3, audioLevel * 10) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
+                </div>
+              </>
+            )}
+
+            {isConnecting && (
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  borderTopColor: '#ffffff',
+                  marginRight: 8,
+                }}
+              />
+            )}
+
+            {!isListeningActive && !isConnecting && (
+              <span style={{ marginRight: 6, fontSize: 13 }}>🎤</span>
+            )}
+
+            {/* Button Text */}
+            <span>
+              {isListeningActive
+                ? (btnHovered ? 'Stop Listening' : 'Listening')
+                : isConnecting
+                ? (voiceStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting...')
+                : 'Listen'}
+            </span>
+          </motion.button>
         </div>
       </div>
 

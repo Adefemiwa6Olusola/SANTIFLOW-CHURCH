@@ -39,6 +39,8 @@ export default function Dashboard() {
   // ── Store ────────────────────────────────────────────────────
   const geminiReady             = useAppStore(s => s.geminiReady);
   const setGeminiReady          = useAppStore(s => s.setGeminiReady);
+  const aiStatus                = useAppStore(s => s.aiStatus);
+  const setAiStatus             = useAppStore(s => s.setAiStatus);
   const transcriptBuffer        = useAppStore(s => s.transcriptBuffer);
   const clearBuffer             = useAppStore(s => s.clearBuffer);
   const transcriptEntries       = useAppStore(s => s.transcriptEntries);
@@ -71,7 +73,6 @@ export default function Dashboard() {
   const processingRef     = useRef(false);
   const bufferRef         = useRef('');
   const quotaWarningLoggedRef = useRef(false);
-  const [aiStatus, setAiStatus]             = useState('idle');
   const [quotaWarning, setQuotaWarning]     = useState(false);
   const [generatingNotes, setGeneratingNotes] = useState(false);
   const [connectedScreens, setConnectedScreens] = useState(0);

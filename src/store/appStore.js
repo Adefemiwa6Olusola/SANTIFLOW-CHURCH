@@ -5,6 +5,8 @@ const useAppStore = create((set, get) => ({
   // ── AI Status ──────────────────────────────────────
   geminiReady: false,
   setGeminiReady: (ready) => set({ geminiReady: ready }),
+  aiStatus: 'idle', // 'idle' | 'processing' | 'error'
+  setAiStatus: (status) => set({ aiStatus: status }),
 
   // ── Voice / Transcription ──────────────────────────
   voiceStatus: 'stopped', // 'stopped'|'listening'|'paused'|'error'
