@@ -177,13 +177,45 @@ export default function VoicePanel() {
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{
-            display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
-            background: isActive ? '#22c55e' : voiceStatus === 'paused' ? '#e2a13c' : voiceStatus === 'error' ? '#ef4444' : '#64748b',
-            boxShadow: isActive ? '0 0 10px #22c55e' : 'none',
-            transition: 'all 0.3s ease'
-          }} />
+          {/* Animated pulsing status dot */}
+          <motion.span
+            animate={
+              voiceStatus === 'listening' || voiceStatus === 'connecting' || voiceStatus === 'reconnecting'
+                ? { scale: [1, 1.25, 1], opacity: [0.8, 1, 0.8] }
+                : {}
+            }
+            transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+            style={{
+              display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+              background: 
+                voiceStatus === 'listening' ? '#22c55e' :
+                (voiceStatus === 'connecting' || voiceStatus === 'reconnecting') ? '#e2a13c' :
+                voiceStatus === 'paused' ? '#f5c842' :
+                voiceStatus === 'error' ? '#ef4444' : '#64748b',
+              boxShadow: `0 0 10px ${
+                voiceStatus === 'listening' ? '#22c55e' :
+                (voiceStatus === 'connecting' || voiceStatus === 'reconnecting') ? '#e2a13c' :
+                voiceStatus === 'paused' ? '#f5c842' :
+                voiceStatus === 'error' ? '#ef4444' : '#64748b'
+              }`,
+              transition: 'background 0.3s ease'
+            }}
+          />
           <span style={{ fontWeight: 700, fontSize: 13, color: 'white', letterSpacing: '0.02em' }}>🎙 Live Transcript</span>
+          
+          {/* Current Status Badge */}
+          <span style={{
+            fontSize: 10, color: 'rgba(255,255,255,0.5)',
+            background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: 5,
+            fontWeight: 600, border: '1px solid rgba(255,255,255,0.06)'
+          }}>
+            {voiceStatus === 'listening' ? 'Listening' :
+             voiceStatus === 'connecting' ? 'Connecting...' :
+             voiceStatus === 'reconnecting' ? 'Reconnecting (Recovery)' :
+             voiceStatus === 'paused' ? 'Paused' :
+             voiceStatus === 'error' ? 'Error' : 'Stopped'}
+          </span>
+
           {isActive && (
             <span style={{ fontSize: 11, color: '#f5c842', fontFamily: 'monospace', background: 'rgba(245,200,66,0.1)', padding: '1px 6px', borderRadius: 4 }}>
               {formatTime(elapsed)}
