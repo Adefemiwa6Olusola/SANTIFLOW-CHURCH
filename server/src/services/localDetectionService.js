@@ -535,8 +535,8 @@ export function detectLocal(text) {
         const maxIdx = Math.max(...indices);
         const windowSize = maxIdx - minIdx + 1;
 
-        // Allow up to 6 filler/extra words inside the matched subset window
-        if (windowSize <= phraseTokens.length + 6) {
+        // Allow up to 10 filler/extra words inside the matched subset window
+        if (windowSize <= phraseTokens.length + 10) {
           bestScore = overlapScore;
           bestMatch = {
             book: entry.book,
@@ -551,22 +551,22 @@ export function detectLocal(text) {
     }
   }
 
-  // Apply matching thresholds
+  // Apply matching thresholds (optimized for increased sensitivity)
   if (bestMatch) {
-    if (bestMatch.score >= 0.85) {
+    if (bestMatch.score >= 0.70) {
       // High Match -> Auto Project
       result.references.push({
         book: bestMatch.book,
         chapter: bestMatch.chapter,
         verseStart: bestMatch.verseStart,
         verseEnd: bestMatch.verseEnd,
-        confidence: 0.92,
+        confidence: 0.90,
         type: "quote",
         matchedText: bestMatch.matchedPhrase,
         reasoning: `Local Semantic Match (phrase score: ${Math.round(bestMatch.score * 100)}%)`
       });
       result.skipGemini = true;
-    } else if (bestMatch.score >= 0.65) {
+    } else if (bestMatch.score >= 0.50) {
       // Medium Match -> Suggestion/Review Queue
       result.references.push({
         book: bestMatch.book,

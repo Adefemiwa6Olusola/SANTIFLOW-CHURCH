@@ -54,8 +54,8 @@ CRITICAL SEMANTIC EXAMPLES (memorize these patterns):
 "The harvest is plentiful but the workers are few" → Matthew 9:37 (0.90)
 
 CONFIDENCE THRESHOLDS:
-- Display/Project immediately if confidence >= 0.85
-- Suggest to operator queue if confidence is between 0.60 and 0.84
+- Display/Project immediately if confidence >= 0.70
+- Suggest to operator queue if confidence is between 0.50 and 0.69
 - Omit completely if confidence < 0.40
 
 COMMAND DETECTION — recognize these spoken commands:
