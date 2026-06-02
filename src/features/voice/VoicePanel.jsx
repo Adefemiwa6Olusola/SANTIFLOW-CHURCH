@@ -446,6 +446,32 @@ export default function VoicePanel() {
             {Math.round(audioLevel * 100)}%
           </span>
         </div>
+
+        {/* Mic Status Indicator Row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '2px 0' }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, minWidth: 40 }}>STATUS:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+              background: 
+                micStatus.status === 'connected' ? '#22c55e' :
+                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#ef4444' : '#64748b',
+              boxShadow: `0 0 6px ${
+                micStatus.status === 'connected' ? '#22c55e' :
+                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#ef4444' : '#64748b'
+              }`
+            }} />
+            <span style={{ 
+              fontSize: 10,
+              fontWeight: 500,
+              color: 
+                micStatus.status === 'connected' ? '#22c55e' : 
+                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#f87171' : 'rgba(255,255,255,0.6)' 
+            }}>
+              {micStatus.message || 'Microphone Ready'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Error / Warning Alert Banner */}

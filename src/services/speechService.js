@@ -69,7 +69,17 @@ class SpeechService {
       };
 
       console.log('[SpeechService] Starting microphone stream monitoring:', constraints);
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (firstErr) {
+        if (deviceId) {
+          console.warn('[SpeechService] getUserMedia with exact deviceId failed, falling back to default microphone:', firstErr.message);
+          this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          this.selectedDeviceId = null;
+        } else {
+          throw firstErr;
+        }
+      }
 
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       this.audioContext = new AudioContextClass();
