@@ -111,7 +111,7 @@ export default function VoicePanel() {
       unsubMicStatus();
       unsubDevices();
     };
-  }, [selectedDevice]);
+  }, []);
 
   // Scroll transcript panel on new messages
   useEffect(() => {
@@ -168,6 +168,12 @@ export default function VoicePanel() {
   const isError = voiceStatus === 'error' || aiStatus === 'error';
   const isPaused = voiceStatus === 'paused';
 
+  // Unified session active state to prevent button state flickering during transient recoveries
+  const isSessionActive = isListeningActive || isConnecting;
+
+  // Speaking detection based on Web Audio decibel readings
+  const isSpeaking = isListeningActive && audioLevel > 0.05;
+
   const statusColor = 
     isError ? '#ef4444' :
     isProcessing ? '#a855f7' :
@@ -182,7 +188,7 @@ export default function VoicePanel() {
     isConnecting ? (voiceStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting...') :
     isPaused ? 'Paused' : 'Ready';
 
-  const isActive = isListeningActive;
+  const isActive = isSessionActive;
   const wordCount = transcriptEntries.reduce((acc, e) => acc + (e.text?.split(' ').length || 0), 0);
 
   return (
@@ -265,7 +271,7 @@ export default function VoicePanel() {
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             animate={
-              isListeningActive
+              isSessionActive
                 ? {
                     background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
                     boxShadow: [
@@ -274,18 +280,13 @@ export default function VoicePanel() {
                       '0 0 12px rgba(239, 68, 68, 0.3)'
                     ],
                   }
-                : isConnecting
-                ? {
-                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                    boxShadow: '0 0 12px rgba(245, 158, 11, 0.3)',
-                  }
                 : {
                     background: 'linear-gradient(135deg, #f5c842, #e07b39)',
                     boxShadow: '0 0 12px rgba(245, 200, 66, 0.2)',
                   }
             }
             transition={
-              isListeningActive
+              isSessionActive
                 ? {
                     boxShadow: {
                       repeat: Infinity,
@@ -304,7 +305,7 @@ export default function VoicePanel() {
               fontWeight: 700,
               fontSize: 12,
               letterSpacing: '0.03em',
-              color: isListeningActive || isConnecting ? '#ffffff' : '#1a1000',
+              color: isSessionActive ? '#ffffff' : '#1a1000',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -315,7 +316,7 @@ export default function VoicePanel() {
             id="voice-toggle-btn"
           >
             {/* Left-side Icon depending on status */}
-            {isListeningActive && (
+            {isSessionActive ? (
               <>
                 {/* Pulsing Recording Indicator Dot */}
                 <div style={{ position: 'relative', width: 8, height: 8, marginRight: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -334,33 +335,14 @@ export default function VoicePanel() {
                   <motion.div animate={{ height: Math.max(3, audioLevel * 10) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
                 </div>
               </>
-            )}
-
-            {isConnecting && (
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  border: '2px solid rgba(255, 255, 255, 0.3)',
-                  borderTopColor: '#ffffff',
-                  marginRight: 8,
-                }}
-              />
-            )}
-
-            {!isListeningActive && !isConnecting && (
+            ) : (
               <span style={{ marginRight: 6, fontSize: 13 }}>🎤</span>
             )}
 
             {/* Button Text */}
             <span>
-              {isListeningActive
+              {isSessionActive
                 ? (btnHovered ? 'Stop Listening' : 'Listening')
-                : isConnecting
-                ? (voiceStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting...')
                 : 'Listen'}
             </span>
           </motion.button>
@@ -470,6 +452,41 @@ export default function VoicePanel() {
             }}>
               {micStatus.message || 'Microphone Ready'}
             </span>
+          </div>
+        </div>
+
+        {/* Speaking & Waveform Diagnostics Row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: 8, marginTop: 4 }}>
+          {/* Speaking Detection Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 90 }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>VOICE:</span>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: isSpeaking ? '#22c55e' : 'rgba(255,255,255,0.4)',
+              background: isSpeaking ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.02)',
+              padding: '1px 6px',
+              borderRadius: 4,
+              border: `1px solid ${isSpeaking ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.05)'}`,
+              transition: 'all 0.2s ease',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              {isSpeaking ? '🗣 Speaking' : '💤 Silent'}
+            </span>
+          </div>
+
+          {/* Equalizer Waveform Visualizer */}
+          <div style={{ display: 'flex', gap: '3px', alignItems: 'center', height: '24px', flex: 1, justifyContent: 'flex-end', paddingRight: 4 }}>
+            <motion.div animate={{ height: Math.max(3, audioLevel * 18) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#a855f7', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 24) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#3b82f6', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 14) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#22c55e', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 28) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#e2a13c', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 20) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#ef4444', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 26) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#3b82f6', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 16) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#a855f7', borderRadius: '1.5px' }} />
+            <motion.div animate={{ height: Math.max(3, audioLevel * 10) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#22c55e', borderRadius: '1.5px' }} />
           </div>
         </div>
       </div>

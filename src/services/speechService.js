@@ -36,6 +36,24 @@ class SpeechService {
     this.baseReconnectDelay = 300;
   }
 
+  teardownSpeechRecognition() {
+    clearTimeout(this.restartTimeout);
+    if (this.recognition) {
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[SpeechService @ ${timestamp}] Tearing down SpeechRecognition instance`);
+      this.recognition.onstart = null;
+      this.recognition.onresult = null;
+      this.recognition.onerror = null;
+      this.recognition.onend = null;
+      try {
+        this.recognition.abort();
+      } catch (e) {
+        console.warn(`[SpeechService @ ${timestamp}] Aborting old recognition failed:`, e.message);
+      }
+      this.recognition = null;
+    }
+  }
+
   async getAudioDevices() {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
       console.warn('[SpeechService] mediaDevices API not supported');
@@ -145,7 +163,11 @@ class SpeechService {
       return false;
     }
 
-    console.log('[SpeechService] Instantiating SpeechRecognition client');
+    // Cleanly tear down any existing speech recognition instance first
+    this.teardownSpeechRecognition();
+
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] Instantiating SpeechRecognition client`);
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     this.recognition = new SpeechRecognition();
     this.recognition.continuous = true;
@@ -300,31 +322,22 @@ class SpeechService {
   }
 
   stop() {
-    console.log('[SpeechService] Disabling speech recognition pipeline');
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] Disabling speech recognition pipeline (stop)`);
     this.isListening = false;
     this.isPaused = false;
-    clearTimeout(this.restartTimeout);
     
+    this.teardownSpeechRecognition();
     this.stopAudioMonitoring();
-
-    if (this.recognition) {
-      try {
-        this.recognition.abort(); // Use abort to cancel immediately
-      } catch (e) { /* ignore */ }
-    }
     this.emit('status', { status: 'stopped' });
   }
 
   pause() {
-    console.log('[SpeechService] Pausing speech recognition client');
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] Pausing speech recognition client (pause)`);
     this.isPaused = true;
-    clearTimeout(this.restartTimeout);
     
-    if (this.recognition) {
-      try {
-        this.recognition.stop();
-      } catch (e) { /* ignore */ }
-    }
+    this.teardownSpeechRecognition();
     this.emit('status', { status: 'paused' });
   }
 
