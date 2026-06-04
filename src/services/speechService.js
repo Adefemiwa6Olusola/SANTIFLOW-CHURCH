@@ -200,6 +200,21 @@ class SpeechService {
         this.emit('mic-status', { status: 'blocked', message: errorMsg });
         this.emit('error', { message: errorMsg, code: event.error });
         this.stop();
+      } else if (event.error === 'service-not-allowed') {
+        const errorMsg = 'Speech Recognition service refused (service-not-allowed). Ensure your browser supports Web Speech and is not offline/restricted.';
+        this.emit('mic-status', { status: 'error', message: errorMsg });
+        this.emit('error', { message: errorMsg, code: event.error });
+        this.stop();
+      } else if (event.error === 'language-not-supported') {
+        const errorMsg = 'Language "en-US" is not supported by your browser\'s speech engine.';
+        this.emit('mic-status', { status: 'error', message: errorMsg });
+        this.emit('error', { message: errorMsg, code: event.error });
+        this.stop();
+      } else if (event.error === 'audio-capture') {
+        const errorMsg = 'Audio capture failed. Ensure your microphone is plugged in, active, and not in use by another program.';
+        this.emit('mic-status', { status: 'error', message: errorMsg });
+        this.emit('error', { message: errorMsg, code: event.error });
+        this.stop();
       } else if (event.error === 'no-speech') {
         // Silent recovery for no-speech timeout (Google's automatic stop)
         console.log('[SpeechService] Silent interval: restarting speech recognition loop.');
@@ -267,9 +282,8 @@ class SpeechService {
     // Keep hardware microphone monitoring active
     await this.startAudioMonitoring(deviceId);
 
-    if (!this.recognition) {
-      this.init();
-    }
+    // Recreate the speech recognition instance to avoid stale browser sockets or permissions locks
+    this.init();
     
     try {
       this.recognition.start();
