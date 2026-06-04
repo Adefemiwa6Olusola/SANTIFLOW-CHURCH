@@ -397,6 +397,21 @@ export default function VoicePanel() {
           </button>
         </div>
 
+        {/* System default microphone instruction warning */}
+        <div style={{
+          fontSize: 9,
+          color: 'rgba(255, 243, 205, 0.5)',
+          background: 'rgba(255, 243, 205, 0.03)',
+          padding: '4px 8px',
+          borderRadius: 4,
+          border: '1px solid rgba(255, 243, 205, 0.06)',
+          lineHeight: 1.35,
+          marginTop: -2,
+          marginBottom: 2
+        }}>
+          💡 <strong>System Default:</strong> Web Speech API transcribes from your browser/OS default microphone. Ensure your system default input matches your selection.
+        </div>
+
         {/* Volume Level Row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, minWidth: 40 }}>VOLUME:</span>

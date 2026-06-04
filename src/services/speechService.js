@@ -111,6 +111,8 @@ class SpeechService {
       const dataArray = new Uint8Array(bufferLength);
 
       this.monitorActive = true;
+      let isUserSpeaking = false;
+
       const checkVolume = () => {
         if (!this.monitorActive || !this.analyser) return;
         this.analyser.getByteFrequencyData(dataArray);
@@ -123,6 +125,18 @@ class SpeechService {
         const normalizedVolume = Math.min(average / 128, 1);
 
         this.emit('audio-level', { level: normalizedVolume });
+
+        // Speaking transition detection
+        const speakingNow = normalizedVolume > 0.05;
+        if (speakingNow !== isUserSpeaking) {
+          isUserSpeaking = speakingNow;
+          const timestamp = new Date().toLocaleTimeString();
+          if (isUserSpeaking) {
+            console.log(`[SpeechService @ ${timestamp}] 🗣 SPEECH DETECTED`);
+          } else {
+            console.log(`[SpeechService @ ${timestamp}] 💤 SPEECH NOT DETECTED (SILENT)`);
+          }
+        }
         
         if (this.monitorActive) {
           requestAnimationFrame(checkVolume);
@@ -130,6 +144,8 @@ class SpeechService {
       };
 
       checkVolume();
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[SpeechService @ ${timestamp}] 🎤 MICROPHONE CONNECTED (Device ID: ${this.selectedDeviceId || 'default'})`);
       this.emit('mic-status', { status: 'connected', message: 'Microphone level monitoring active' });
       await this.getAudioDevices();
     } catch (err) {
@@ -154,6 +170,8 @@ class SpeechService {
     }
     this.analyser = null;
     this.source = null;
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] 🎤 MICROPHONE DISCONNECTED`);
     this.emit('mic-status', { status: 'disconnected', message: 'Microphone level monitoring inactive' });
   }
 
@@ -176,7 +194,8 @@ class SpeechService {
     this.recognition.maxAlternatives = 1;
 
     this.recognition.onstart = () => {
-      console.log('[SpeechService] Speech Recognition server connected and listening.');
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[SpeechService @ ${timestamp}] 🟢 LISTENING STARTED`);
       this.reconnectAttempts = 0; // reset attempts on successful start
       this.emit('status', { status: 'listening' });
     };
@@ -197,7 +216,8 @@ class SpeechService {
       if (newFinal) {
         this.finalTranscript += newFinal;
         const cleanText = newFinal.trim();
-        console.log('[SpeechService] Speech finalized:', cleanText);
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`[SpeechService @ ${timestamp}] 📝 TRANSCRIPT RECEIVED: "${cleanText}"`);
         this.emit('transcript', {
           text: cleanText,
           fullText: this.finalTranscript.trim(),
@@ -215,6 +235,8 @@ class SpeechService {
     };
 
     this.recognition.onerror = (event) => {
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[SpeechService @ ${timestamp}] ❌ TRANSCRIPT FAILED: ${event.error}`);
       console.warn(`[SpeechService] Speech Engine Error Event: "${event.error}"`);
       
       if (event.error === 'not-allowed') {
@@ -297,28 +319,35 @@ class SpeechService {
   }
 
   async start(deviceId = null) {
-    console.log('[SpeechService] Activating speech recognition pipeline');
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] Activating speech recognition pipeline (start)`);
     this.isListening = true;
     this.isPaused = false;
     
     // Keep hardware microphone monitoring active
     await this.startAudioMonitoring(deviceId);
 
-    // Recreate the speech recognition instance to avoid stale browser sockets or permissions locks
-    this.init();
-    
-    try {
-      this.recognition.start();
-      console.log('[SpeechService] Recognition engine listening');
-    } catch (e) {
-      if (e.message?.includes('already started')) {
-        // Already running, update state
-        this.emit('status', { status: 'listening' });
-      } else {
-        console.warn('[SpeechService] Engine start threw exception, queueing reconnect:', e.message);
+    // Cleanly tear down any existing browser SpeechRecognition channels first
+    this.teardownSpeechRecognition();
+
+    // Use a brief delay to let the browser release the speech port to avoid race conflicts
+    setTimeout(() => {
+      if (!this.isListening || this.isPaused) {
+        console.log('[SpeechService] start aborted: session stopped during initial delay');
+        return;
+      }
+
+      this.init();
+      
+      try {
+        this.recognition.start();
+        const startTs = new Date().toLocaleTimeString();
+        console.log(`[SpeechService @ ${startTs}] Recognition engine listening successfully`);
+      } catch (e) {
+        console.warn('[SpeechService] Engine start failed, queueing reconnect:', e.message);
         this.reconnect();
       }
-    }
+    }, 150);
   }
 
   stop() {
