@@ -75,16 +75,18 @@ export async function detectScriptures(transcriptChunk) {
 
       if (response.status === 401) {
         const msg = data.error || '';
-        // Auth middleware returns "Authorization token required" or "Request is not authorized"
-        // AI controller returns "Gemini API key is invalid or unauthorized"
         if (msg.includes('Gemini')) {
           return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'INVALID_KEY' };
         }
-        // Login session expired — not an API key problem
         return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'SESSION_EXPIRED' };
       }
       if (response.status === 429) {
         return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'QUOTA_EXCEEDED' };
+      }
+      if (response.status === 503) {
+        // Google AI high demand — silent fail, will retry on next transcript chunk
+        console.warn('[SanctiFlow AI] Gemini temporarily unavailable (503). Will retry automatically.');
+        return { references: [], commands: [], sermonTopics: [], keyPhrases: [] };
       }
       // 500 or other server error — don't alarm the user
       console.warn('[SanctiFlow AI] Server error:', response.status, data.error);

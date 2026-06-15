@@ -387,6 +387,74 @@ const POPULAR_VERSES = [
       "be careful for nothing but in everything by prayer and supplication",
       "do not be anxious about anything but in everything by prayer"
     ]
+  },
+  // ── Beatitudes (Matthew 5) ──
+  {
+    book: "Matthew", chapter: 5, verseStart: 3, verseEnd: 3,
+    phrases: [
+      "blessed are the poor in spirit for theirs is the kingdom of heaven",
+      "blessed are the poor in spirit"
+    ]
+  },
+  {
+    book: "Matthew", chapter: 5, verseStart: 4, verseEnd: 4,
+    phrases: [
+      "blessed are they that mourn for they shall be comforted",
+      "blessed are those who mourn for they shall be comforted"
+    ]
+  },
+  {
+    book: "Matthew", chapter: 5, verseStart: 5, verseEnd: 5,
+    phrases: [
+      "blessed are the meek for they shall inherit the earth",
+      "blessed are the meek"
+    ]
+  },
+  {
+    book: "Matthew", chapter: 5, verseStart: 7, verseEnd: 7,
+    phrases: [
+      "blessed are the merciful for they shall obtain mercy",
+      "blessed are the merciful"
+    ]
+  },
+  {
+    book: "Matthew", chapter: 5, verseStart: 9, verseEnd: 9,
+    phrases: [
+      "blessed are the peacemakers for they shall be called the children of God",
+      "blessed are the peacemakers"
+    ]
+  },
+  // ── Additional high-frequency verses ──
+  {
+    book: "Jeremiah", chapter: 29, verseStart: 11, verseEnd: 11,
+    phrases: [
+      "for I know the thoughts that I think toward you saith the Lord thoughts of peace and not of evil",
+      "I know the plans I have for you plans to prosper you and not to harm you plans for a hope and a future",
+      "God has plans for us plans for a future and a hope",
+      "plans to give you a hope and a future"
+    ]
+  },
+  {
+    book: "John", chapter: 3, verseStart: 17, verseEnd: 17,
+    phrases: [
+      "for God sent not his son into the world to condemn the world but that the world through him might be saved",
+      "God sent his son not to condemn the world but to save the world"
+    ]
+  },
+  {
+    book: "Romans", chapter: 10, verseStart: 9, verseEnd: 9,
+    phrases: [
+      "if thou shalt confess with thy mouth the Lord Jesus and shalt believe in thine heart that God hath raised him",
+      "if you confess with your mouth that Jesus is Lord and believe in your heart",
+      "confess with your mouth the Lord Jesus"
+    ]
+  },
+  {
+    book: "Psalms", chapter: 27, verseStart: 1, verseEnd: 1,
+    phrases: [
+      "the Lord is my light and my salvation whom shall I fear the Lord is the strength of my life",
+      "the Lord is my light and my salvation whom shall I fear"
+    ]
   }
 ];
 

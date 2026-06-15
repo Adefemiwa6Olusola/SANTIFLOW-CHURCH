@@ -17,6 +17,9 @@ export async function detect(req, res) {
       if (results.error === 'QUOTA_EXCEEDED') {
         return res.status(429).json({ error: 'Gemini API quota exceeded' });
       }
+      if (results.error === 'SERVICE_UNAVAILABLE') {
+        return res.status(503).json({ error: 'Gemini AI service temporarily unavailable (high demand). Please retry shortly.' });
+      }
       return res.status(500).json({ error: `AI processing failed: ${results.error}` });
     }
     

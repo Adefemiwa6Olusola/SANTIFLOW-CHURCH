@@ -310,67 +310,100 @@ export async function detectScriptures(transcriptChunk, customApiKey) {
   const keyList = customApiKey ? [customApiKey] : keys;
   const maxAttempts = keyList.length;
 
+  // Helper: sleep for ms milliseconds
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   while (attempt < maxAttempts) {
     let currentKey = keyList[attempt];
-    try {
-      const { model } = getModelsForKey(currentKey);
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const parsed = safeParseJSON(text);
 
-      if (!parsed) return { references: [], commands: [], sermonTopics: [], keyPhrases: [] };
+    // Allow up to 2 same-key retries for transient server-side errors (503, 502, 500)
+    let sameKeyRetry = 0;
+    const maxSameKeyRetries = 2;
 
-      const refs = (Array.isArray(parsed.references) ? parsed.references : [])
-        .filter(r => r.confidence >= 0.40)
-        .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    while (sameKeyRetry <= maxSameKeyRetries) {
+      try {
+        const { model } = getModelsForKey(currentKey);
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        const parsed = safeParseJSON(text);
 
-      const finalResult = {
-        references: refs,
-        commands: Array.isArray(parsed.commands) ? parsed.commands : [],
-        sermonTopics: Array.isArray(parsed.sermonTopics) ? parsed.sermonTopics : [],
-        keyPhrases: Array.isArray(parsed.keyPhrases) ? parsed.keyPhrases : [],
-      };
+        if (!parsed) return { references: [], commands: [], sermonTopics: [], keyPhrases: [] };
 
-      // Save to cache on success
-      saveToCache(chunk, finalResult);
-      return finalResult;
+        const refs = (Array.isArray(parsed.references) ? parsed.references : [])
+          .filter(r => r.confidence >= 0.40)
+          .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
 
-    } catch (err) {
-      console.error(`[SanctiFlow Server AI] API error with key:`, err.message);
+        const finalResult = {
+          references: refs,
+          commands: Array.isArray(parsed.commands) ? parsed.commands : [],
+          sermonTopics: Array.isArray(parsed.sermonTopics) ? parsed.sermonTopics : [],
+          keyPhrases: Array.isArray(parsed.keyPhrases) ? parsed.keyPhrases : [],
+        };
 
-      const isQuotaOrTempError =
-        err?.status === 429 ||
-        err?.message?.includes('429') ||
-        err?.message?.includes('quota') ||
-        err?.message?.includes('limit') ||
-        err?.message?.includes('exhausted') ||
-        err?.message?.includes('Too Many Requests');
+        // Save to cache on success
+        saveToCache(chunk, finalResult);
+        return finalResult;
 
-      if (isQuotaOrTempError && !customApiKey && keys.length > 1) {
-        // Set cooldown on the current key
-        cooldowns[activeKeyIndex] = Date.now() + 5 * 1000;
-        console.warn(`[SanctiFlow Server AI] Cooldown of 5s placed on key ${activeKeyIndex + 1}.`);
+      } catch (err) {
+        const isTransientServerError =
+          err?.status === 503 ||
+          err?.status === 502 ||
+          err?.status === 500 ||
+          err?.message?.includes('503') ||
+          err?.message?.includes('502') ||
+          err?.message?.includes('Service Unavailable') ||
+          err?.message?.includes('high demand') ||
+          err?.message?.includes('try again later');
 
-        // Switch to the fallback key
-        const prevKey = currentKey;
-        key = getActiveKey();
+        const isQuotaOrRateLimitError =
+          err?.status === 429 ||
+          err?.message?.includes('429') ||
+          err?.message?.includes('quota') ||
+          err?.message?.includes('limit') ||
+          err?.message?.includes('exhausted') ||
+          err?.message?.includes('Too Many Requests');
 
-        if (key && key !== prevKey) {
-          console.warn(`[SanctiFlow Server AI] Failover activated! Silently switching to key ${activeKeyIndex + 1} and retrying request...`);
-          attempt++;
-          continue; // Run request loop again with the new key
+        if (isTransientServerError && sameKeyRetry < maxSameKeyRetries) {
+          sameKeyRetry++;
+          const retryDelay = 600 * sameKeyRetry; // 600ms, 1200ms
+          console.warn(`[SanctiFlow Server AI] Transient server error (503/high demand). Retry ${sameKeyRetry}/${maxSameKeyRetries} in ${retryDelay}ms...`);
+          await sleep(retryDelay);
+          continue; // retry same key
         }
-      }
 
-      // If we cannot failover or it's a fatal error, return standardized errors
-      if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
-        return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'QUOTA_EXCEEDED' };
+        console.error(`[SanctiFlow Server AI] API error with key:`, err.message);
+
+        if ((isQuotaOrRateLimitError || isTransientServerError) && !customApiKey && keys.length > 1) {
+          // Set cooldown on the current key
+          cooldowns[activeKeyIndex] = Date.now() + 5 * 1000;
+          console.warn(`[SanctiFlow Server AI] Cooldown of 5s placed on key ${activeKeyIndex + 1}.`);
+
+          // Switch to the fallback key
+          const prevKey = currentKey;
+          key = getActiveKey();
+
+          if (key && key !== prevKey) {
+            console.warn(`[SanctiFlow Server AI] Failover activated! Silently switching to key ${activeKeyIndex + 1} and retrying request...`);
+            attempt++;
+            break; // Break inner retry loop, outer loop will use new key
+          }
+        }
+
+        // If we cannot failover or it's a fatal error, return standardized errors
+        if (isQuotaOrRateLimitError) {
+          return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'QUOTA_EXCEEDED' };
+        }
+        if (isTransientServerError) {
+          return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'SERVICE_UNAVAILABLE' };
+        }
+        if (err?.message?.includes('API_KEY_INVALID') || err?.message?.includes('API key not valid')) {
+          return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'INVALID_KEY' };
+        }
+        return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: err.message };
       }
-      if (err?.message?.includes('API_KEY_INVALID') || err?.message?.includes('API key not valid')) {
-        return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'INVALID_KEY' };
-      }
-      return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: err.message };
     }
+
+    attempt++;
   }
 
   return { references: [], commands: [], sermonTopics: [], keyPhrases: [], error: 'QUOTA_EXCEEDED' };
@@ -383,38 +416,56 @@ export async function generateSermonNotes(fullTranscript, customApiKey) {
   const key = customApiKey || getActiveKey();
   if (!key || !fullTranscript?.trim()) return null;
   
-  try {
-    const { notesModel } = getModelsForKey(key);
-    const result = await notesModel.generateContent(
-      `Generate sermon notes for this transcript:\n\n"${fullTranscript.slice(0, 12000)}"`
-    );
-    return safeParseJSON(result.response.text());
-  } catch (err) {
-    console.error('[SanctiFlow Server AI] Notes generation error:', err?.message);
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const notesPrompt = `Generate sermon notes for this transcript:\n\n"${fullTranscript.slice(0, 12000)}"`;
 
-    const isQuotaOrTempError =
-      err?.status === 429 ||
-      err?.message?.includes('429') ||
-      err?.message?.includes('quota') ||
-      err?.message?.includes('Too Many Requests');
+  // Up to 2 same-key retries for transient server errors
+  for (let retry = 0; retry <= 2; retry++) {
+    try {
+      const { notesModel } = getModelsForKey(key);
+      const result = await notesModel.generateContent(notesPrompt);
+      return safeParseJSON(result.response.text());
+    } catch (err) {
+      console.error('[SanctiFlow Server AI] Notes generation error:', err?.message);
 
-    if (isQuotaOrTempError && !customApiKey && keys.length > 1) {
-      cooldowns[activeKeyIndex] = Date.now() + 5 * 1000;
-      const fallbackKey = getActiveKey();
-      
-      if (fallbackKey && fallbackKey !== key) {
-        console.warn('[SanctiFlow Server AI] Retrying sermon notes generation with fallback key...');
-        try {
-          const { notesModel: backupNotesModel } = getModelsForKey(fallbackKey);
-          const result = await backupNotesModel.generateContent(
-            `Generate sermon notes for this transcript:\n\n"${fullTranscript.slice(0, 12000)}"`
-          );
-          return safeParseJSON(result.response.text());
-        } catch (retryErr) {
-          console.error('[SanctiFlow Server AI] Notes retry failed:', retryErr.message);
+      const isTransientServerError =
+        err?.status === 503 ||
+        err?.status === 502 ||
+        err?.message?.includes('503') ||
+        err?.message?.includes('Service Unavailable') ||
+        err?.message?.includes('high demand') ||
+        err?.message?.includes('try again later');
+
+      const isQuotaOrTempError =
+        err?.status === 429 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('Too Many Requests');
+
+      if (isTransientServerError && retry < 2) {
+        const delay = 600 * (retry + 1);
+        console.warn(`[SanctiFlow Server AI] Notes: transient error, retry ${retry + 1}/2 in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+
+      if ((isQuotaOrTempError || isTransientServerError) && !customApiKey && keys.length > 1) {
+        cooldowns[activeKeyIndex] = Date.now() + 5 * 1000;
+        const fallbackKey = getActiveKey();
+
+        if (fallbackKey && fallbackKey !== key) {
+          console.warn('[SanctiFlow Server AI] Retrying sermon notes generation with fallback key...');
+          try {
+            const { notesModel: backupNotesModel } = getModelsForKey(fallbackKey);
+            const result = await backupNotesModel.generateContent(notesPrompt);
+            return safeParseJSON(result.response.text());
+          } catch (retryErr) {
+            console.error('[SanctiFlow Server AI] Notes retry failed:', retryErr.message);
+          }
         }
       }
+      return null;
     }
-    return null;
   }
+  return null;
 }
