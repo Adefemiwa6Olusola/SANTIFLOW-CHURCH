@@ -19,12 +19,6 @@ export default function VoicePanel() {
   const scrollRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [btnHovered, setBtnHovered] = useState(false);
-  
-  // Audio configuration & level meter states
-  const [devices, setDevices] = useState([]);
-  const [selectedDevice, setSelectedDevice] = useState('');
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [micStatus, setMicStatus] = useState({ status: 'idle', message: 'Microphone ready' });
   const [errorMessage, setErrorMessage] = useState('');
 
   const isSupported = typeof window !== 'undefined' &&
@@ -44,19 +38,7 @@ export default function VoicePanel() {
     }
   }, [voiceStatus, sessionStartTime]);
 
-  // Load available audio input devices
-  const loadDevices = async () => {
-    const devList = await speechService.getAudioDevices();
-    setDevices(devList);
-    if (devList.length > 0 && !selectedDevice) {
-      setSelectedDevice(devList[0].deviceId);
-    }
-  };
-
   useEffect(() => {
-    // Initial devices enumeration
-    loadDevices();
-
     // Listen to Speech events
     const unsubTranscript = speechService.on('transcript', (data) => {
       console.log('[VoicePanel] Final transcript received:', data.text);
@@ -73,7 +55,7 @@ export default function VoicePanel() {
       setVoiceStatus(data.status);
       if (data.status === 'listening') {
         setSessionStartTime(Date.now());
-        setErrorMessage(''); // Clear errors when starting successfully
+        setErrorMessage('');
       }
     });
 
@@ -85,21 +67,10 @@ export default function VoicePanel() {
     };
     const unsubErrorCleanup = speechService.on('error', unsubError);
 
-    // Listen to Web Audio API monitoring events
-    const unsubAudioLevel = speechService.on('audio-level', (data) => {
-      setAudioLevel(data.level);
-    });
-
     const unsubMicStatus = speechService.on('mic-status', (data) => {
-      console.log('[VoicePanel] Mic status updated:', data.status, data.message);
-      setMicStatus(data);
       if (data.status === 'error' || data.status === 'blocked') {
         setErrorMessage(data.message);
       }
-    });
-
-    const unsubDevices = speechService.on('devices-updated', (devs) => {
-      setDevices(devs);
     });
 
     return () => {
@@ -107,9 +78,7 @@ export default function VoicePanel() {
       unsubInterim();
       unsubStatus();
       unsubErrorCleanup();
-      unsubAudioLevel();
       unsubMicStatus();
-      unsubDevices();
     };
   }, []);
 
@@ -133,26 +102,10 @@ export default function VoicePanel() {
       console.log('[VoicePanel] Stopping recording');
       speechService.stop();
     } else {
-      console.log('[VoicePanel] Starting recording with device:', selectedDevice);
+      console.log('[VoicePanel] Starting recording');
       setErrorMessage('');
-      await speechService.start(selectedDevice || null);
-    }
-  };
-
-  const handleDeviceChange = async (e) => {
-    const newDeviceId = e.target.value;
-    setSelectedDevice(newDeviceId);
-    console.log('[VoicePanel] Audio input device changed to:', newDeviceId);
-    
-    // If currently listening, hot-swap the stream monitoring and audio capture
-    if (voiceStatus === 'listening') {
-      speechService.stop();
-      setTimeout(async () => {
-        await speechService.start(newDeviceId);
-      }, 300);
-    } else {
-      // Just test the stream to check permissions
-      await speechService.startAudioMonitoring(newDeviceId);
+      // Always use system default mic so Web Speech API and audio monitoring are in sync
+      await speechService.start(null);
     }
   };
 
@@ -170,9 +123,6 @@ export default function VoicePanel() {
 
   // Unified session active state to prevent button state flickering during transient recoveries
   const isSessionActive = isListeningActive || isConnecting;
-
-  // Speaking detection based on Web Audio decibel readings
-  const isSpeaking = isListeningActive && audioLevel > 0.05;
 
   const statusColor = 
     isError ? '#ef4444' :
@@ -327,13 +277,6 @@ export default function VoicePanel() {
                   />
                   <div style={{ width: 4, height: 4, borderRadius: '50%', backgroundColor: '#ffffff' }} />
                 </div>
-                
-                {/* Audio Level Waveform Bar Indicator */}
-                <div style={{ display: 'flex', gap: '2px', alignItems: 'center', height: '14px', marginRight: 8 }}>
-                  <motion.div animate={{ height: Math.max(3, audioLevel * 14) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
-                  <motion.div animate={{ height: Math.max(3, audioLevel * 20) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
-                  <motion.div animate={{ height: Math.max(3, audioLevel * 10) }} transition={{ type: 'spring', stiffness: 350, damping: 15 }} style={{ width: '2px', background: '#ffffff', borderRadius: '1px' }} />
-                </div>
               </>
             ) : (
               <span style={{ marginRight: 6, fontSize: 13 }}>🎤</span>
@@ -349,162 +292,6 @@ export default function VoicePanel() {
         </div>
       </div>
 
-      {/* Audio Setup and Diagnostics Panel */}
-      <div style={{
-        padding: '10px 16px',
-        background: 'rgba(255,255,255,0.02)',
-        borderBottom: '1px solid hsla(255,255,255,0.04)',
-        display: 'flex', flexDirection: 'column', gap: 8,
-        flexShrink: 0
-      }}>
-        {/* Device Selection Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-          <label style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>INPUT:</label>
-          <select
-            value={selectedDevice}
-            onChange={handleDeviceChange}
-            style={{
-              flex: 1,
-              maxWidth: '80%',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 6,
-              color: 'rgba(255,255,255,0.8)',
-              fontSize: 11,
-              padding: '4px 6px',
-              outline: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            {devices.length === 0 ? (
-              <option value="">Default Microphone</option>
-            ) : (
-              devices.map(d => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label || `Microphone ${d.deviceId.slice(0, 5)}...`}
-                </option>
-              ))
-            )}
-          </select>
-          <button
-            onClick={loadDevices}
-            title="Refresh device list"
-            style={{
-              background: 'none', border: 'none', color: '#f5c842', cursor: 'pointer', fontSize: 13
-            }}
-          >
-            🔄
-          </button>
-        </div>
-
-        {/* System default microphone instruction warning */}
-        <div style={{
-          fontSize: 9,
-          color: 'rgba(255, 243, 205, 0.5)',
-          background: 'rgba(255, 243, 205, 0.03)',
-          padding: '4px 8px',
-          borderRadius: 4,
-          border: '1px solid rgba(255, 243, 205, 0.06)',
-          lineHeight: 1.35,
-          marginTop: -2,
-          marginBottom: 2
-        }}>
-          💡 <strong>System Default:</strong> Web Speech API transcribes from your browser/OS default microphone. Ensure your system default input matches your selection.
-        </div>
-
-        {/* Volume Level Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, minWidth: 40 }}>VOLUME:</span>
-          <div style={{
-            flex: 1,
-            height: 6,
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: 3,
-            overflow: 'hidden',
-            position: 'relative'
-          }}>
-            {/* Level Bar */}
-            <motion.div
-              animate={{ width: `${audioLevel * 100}%` }}
-              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-              style={{
-                height: '100%',
-                borderRadius: 3,
-                background: audioLevel > 0.8
-                  ? 'linear-gradient(90deg, #22c55e, #e2a13c, #ef4444)'
-                  : audioLevel > 0.5
-                    ? 'linear-gradient(90deg, #22c55e, #e2a13c)'
-                    : '#22c55e',
-                boxShadow: audioLevel > 0.1 ? '0 0 8px rgba(34,197,94,0.5)' : 'none'
-              }}
-            />
-          </div>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', minWidth: 25, textAlign: 'right' }}>
-            {Math.round(audioLevel * 100)}%
-          </span>
-        </div>
-
-        {/* Mic Status Indicator Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '2px 0' }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, minWidth: 40 }}>STATUS:</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{
-              display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-              background: 
-                micStatus.status === 'connected' ? '#22c55e' :
-                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#ef4444' : '#64748b',
-              boxShadow: `0 0 6px ${
-                micStatus.status === 'connected' ? '#22c55e' :
-                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#ef4444' : '#64748b'
-              }`
-            }} />
-            <span style={{ 
-              fontSize: 10,
-              fontWeight: 500,
-              color: 
-                micStatus.status === 'connected' ? '#22c55e' : 
-                micStatus.status === 'blocked' || micStatus.status === 'error' ? '#f87171' : 'rgba(255,255,255,0.6)' 
-            }}>
-              {micStatus.message || 'Microphone Ready'}
-            </span>
-          </div>
-        </div>
-
-        {/* Speaking & Waveform Diagnostics Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: 8, marginTop: 4 }}>
-          {/* Speaking Detection Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 90 }}>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600 }}>VOICE:</span>
-            <span style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: isSpeaking ? '#22c55e' : 'rgba(255,255,255,0.4)',
-              background: isSpeaking ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.02)',
-              padding: '1px 6px',
-              borderRadius: 4,
-              border: `1px solid ${isSpeaking ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.05)'}`,
-              transition: 'all 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              {isSpeaking ? '🗣 Speaking' : '💤 Silent'}
-            </span>
-          </div>
-
-          {/* Equalizer Waveform Visualizer */}
-          <div style={{ display: 'flex', gap: '3px', alignItems: 'center', height: '24px', flex: 1, justifyContent: 'flex-end', paddingRight: 4 }}>
-            <motion.div animate={{ height: Math.max(3, audioLevel * 18) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#a855f7', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 24) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#3b82f6', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 14) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#22c55e', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 28) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#e2a13c', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 20) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#ef4444', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 26) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#3b82f6', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 16) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#a855f7', borderRadius: '1.5px' }} />
-            <motion.div animate={{ height: Math.max(3, audioLevel * 10) }} transition={{ type: 'spring', stiffness: 400, damping: 12 }} style={{ width: '3px', background: '#22c55e', borderRadius: '1.5px' }} />
-          </div>
-        </div>
-      </div>
 
       {/* Error / Warning Alert Banner */}
       <AnimatePresence>
