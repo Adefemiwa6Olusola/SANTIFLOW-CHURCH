@@ -32,8 +32,8 @@ class SpeechService {
 
     // Reconnection & Error Backoff State
     this.reconnectAttempts = 0;
-    this.maxReconnectDelay = 5000;
-    this.baseReconnectDelay = 300;
+    this.maxReconnectDelay = 4000;
+    this.baseReconnectDelay = 150;
   }
 
   teardownSpeechRecognition() {
@@ -190,8 +190,8 @@ class SpeechService {
     this.recognition = new SpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
-    this.recognition.lang = 'en-US';
-    this.recognition.maxAlternatives = 1;
+    this.recognition.lang = '';          // Empty = browser uses system locale (avoids language mismatch)
+    this.recognition.maxAlternatives = 3; // Consider up to 3 alternatives for better accuracy on accents
 
     this.recognition.onstart = () => {
       const timestamp = new Date().toLocaleTimeString();
@@ -260,9 +260,11 @@ class SpeechService {
         this.emit('error', { message: errorMsg, code: event.error });
         this.stop();
       } else if (event.error === 'no-speech') {
-        // Silent recovery for no-speech timeout (Google's automatic stop)
-        console.log('[SpeechService] Silent interval: restarting speech recognition loop.');
+        // no-speech = engine timed out waiting for audio — immediately restart
+        console.log('[SpeechService] no-speech timeout: restarting recognition loop now.');
         this.emit('status', { status: 'connecting' });
+        // Must explicitly reconnect — the engine stops itself on no-speech
+        this.reconnect();
       } else if (event.error === 'network') {
         // Suppress displaying network error in operator panel to prevent panic.
         // Instead, mark status as 'reconnecting' and perform automatic recovery.
