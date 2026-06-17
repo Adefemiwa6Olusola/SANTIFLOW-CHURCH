@@ -167,6 +167,34 @@ const useAppStore = create((set, get) => ({
   // 'main' | 'queue' | 'history' | 'sermon' | 'stats'
   activeTab: 'main',
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // ── Speech Engine Settings ───────────────────────
+  speechEngine: (() => {
+    try {
+      return localStorage.getItem('sanctiflow_speech_engine') || 'browser';
+    } catch {
+      return 'browser';
+    }
+  })(),
+  setSpeechEngine: (engine) => {
+    try {
+      localStorage.setItem('sanctiflow_speech_engine', engine);
+    } catch {}
+    set({ speechEngine: engine });
+  },
+  deepgramApiKey: (() => {
+    try {
+      return localStorage.getItem('sanctiflow_deepgram_api_key') || '';
+    } catch {
+      return '';
+    }
+  })(),
+  setDeepgramApiKey: (key) => {
+    try {
+      localStorage.setItem('sanctiflow_deepgram_api_key', key);
+    } catch {}
+    set({ deepgramApiKey: key });
+  },
 }));
 
 export default useAppStore;

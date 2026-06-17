@@ -14,8 +14,13 @@ export default function Settings() {
   const churchName = useAppStore(s => s.churchName);
   const setChurchName = useAppStore(s => s.setChurchName);
   const addToast = useAppStore(s => s.addToast);
+  const speechEngine = useAppStore(s => s.speechEngine);
+  const setSpeechEngine = useAppStore(s => s.setSpeechEngine);
+  const deepgramApiKey = useAppStore(s => s.deepgramApiKey);
+  const setDeepgramApiKey = useAppStore(s => s.setDeepgramApiKey);
 
   const [tempChurch, setTempChurch] = useState(churchName);
+  const [tempKey, setTempKey] = useState(deepgramApiKey);
 
   const isConnected = geminiReady || isGeminiReady();
 
@@ -104,6 +109,47 @@ export default function Settings() {
             style={{ ...inputStyle, cursor: 'pointer' }}>
             {TRANSLATIONS.map(t => <option key={t.id} value={t.id} style={{ background: '#0f1729' }}>{t.shortName} — {t.name}</option>)}
           </select>
+        </div>
+
+        {/* Speech Recognition Engine */}
+        <div style={cardStyle}>
+          <label style={labelStyle}>Speech Recognition Engine</label>
+          <select value={speechEngine} onChange={e => setSpeechEngine(e.target.value)}
+            style={{ ...inputStyle, cursor: 'pointer' }}>
+            <option value="browser" style={{ background: '#0f1729' }}>Native Browser API (Built-in, Free)</option>
+            <option value="deepgram" style={{ background: '#0f1729' }}>Deepgram Streaming (WebSocket, Ultra-low latency)</option>
+          </select>
+          
+          {speechEngine === 'deepgram' && (
+            <div style={{ marginTop: 12 }}>
+              <label style={{ ...labelStyle, fontSize: 9, marginTop: 12 }}>Deepgram API Key</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="password"
+                  style={{ ...inputStyle, flex: 1 }}
+                  value={tempKey}
+                  onChange={e => setTempKey(e.target.value)}
+                  placeholder="Paste your Deepgram API Key"
+                />
+                <button
+                  onClick={() => {
+                    setDeepgramApiKey(tempKey);
+                    addToast({ type: 'success', message: 'Deepgram API Key saved' });
+                  }}
+                  style={{
+                    padding: '10px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    fontWeight: 700, fontSize: 12, background: 'rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.7)', flexShrink: 0
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 6, margin: 0, lineHeight: 1.4 }}>
+                A Deepgram key enables sub-500ms streaming audio transcription. Get one for free at <a href="https://console.deepgram.com/" target="_blank" rel="noopener noreferrer" style={{ color: '#f5c842', textDecoration: 'underline' }}>console.deepgram.com</a>.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* AI Mode */}

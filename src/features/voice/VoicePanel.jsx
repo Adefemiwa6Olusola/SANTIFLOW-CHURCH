@@ -3,6 +3,73 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useAppStore from '../../store/appStore';
 import speechService from '../../services/speechService';
 
+import { fetchVerse } from '../../services/bibleService';
+
+function ScriptureMatchCard({ match, activeTranslation, onProject }) {
+  const [verseText, setVerseText] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetchVerse(activeTranslation, match.book, match.chapter, match.verseStart, match.verseEnd)
+      .then(data => {
+        if (active) {
+          setVerseText(data.text);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [match, activeTranslation]);
+
+  return (
+    <motion.div
+      whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.06)' }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => {
+        if (verseText) {
+          onProject({
+            reference: `${match.book} ${match.chapter}:${match.verseStart}${match.verseEnd && match.verseEnd !== match.verseStart ? `-${match.verseEnd}` : ''}`,
+            text: verseText,
+            book: match.book,
+            chapter: match.chapter,
+            verseStart: match.verseStart,
+            verseEnd: match.verseEnd,
+            translation: activeTranslation
+          });
+        }
+      }}
+      style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.05)',
+        borderRadius: 8,
+        padding: '8px 10px',
+        marginBottom: 6,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#f5c842' }}>
+          {match.book} {match.chapter}:{match.verseStart}
+        </span>
+        <span style={{ fontSize: 8, color: match.confidence >= 0.85 ? '#22c55e' : '#f59e0b', background: 'rgba(255,255,255,0.04)', padding: '1px 4px', borderRadius: 3 }}>
+          {Math.round(match.confidence * 100)}%
+        </span>
+      </div>
+      {loading ? (
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>Loading scripture...</span>
+      ) : (
+        <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.7)', lineHeight: 1.4, fontStyle: 'italic' }}>
+          "{verseText || 'Text not found'}"
+        </p>
+      )}
+    </motion.div>
+  );
+}
+
 export default function VoicePanel() {
   const voiceStatus = useAppStore(s => s.voiceStatus);
   const aiStatus = useAppStore(s => s.aiStatus);
@@ -16,6 +83,10 @@ export default function VoicePanel() {
   const clearTranscript = useAppStore(s => s.clearTranscript);
   const setSessionStartTime = useAppStore(s => s.setSessionStartTime);
   const currentVerse = useAppStore(s => s.currentVerse);
+  const detectedScriptures = useAppStore(s => s.detectedScriptures);
+  const activeTranslation = useAppStore(s => s.activeTranslation);
+  const speechEngine = useAppStore(s => s.speechEngine);
+  const deepgramApiKey = useAppStore(s => s.deepgramApiKey);
   
   const scrollRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
@@ -101,10 +172,11 @@ export default function VoicePanel() {
   }, [transcriptEntries, interimText]);
 
   const handleToggle = async () => {
-    if (!isSupported) {
+    const usingDeepgram = speechEngine === 'deepgram';
+    if (!usingDeepgram && !isSupported) {
       useAppStore.getState().addToast({
         type: 'error',
-        message: '⚠ Voice requires Chrome or Edge browser'
+        message: '⚠ Native browser voice recognition requires Chrome or Edge'
       });
       return;
     }
@@ -115,6 +187,9 @@ export default function VoicePanel() {
     } else {
       console.log('[VoicePanel] Starting recording');
       setErrorMessage('');
+      // Configure engine settings before starting speechService
+      speechService.engineType = speechEngine;
+      speechService.deepgramApiKey = deepgramApiKey;
       // Always use system default mic so Web Speech API and audio monitoring are in sync
       await speechService.start(null);
     }
@@ -124,6 +199,12 @@ export default function VoicePanel() {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
+  };
+
+  const handleProject = (verse) => {
+    if (window.__sf && window.__sf.project) {
+      window.__sf.project(verse);
+    }
   };
 
   const isListeningActive = voiceStatus === 'listening';
@@ -356,7 +437,7 @@ export default function VoicePanel() {
       </AnimatePresence>
 
       {/* Browser compatibility warning */}
-      {!isSupported && (
+      {speechEngine === 'browser' && !isSupported && (
         <div style={{
           padding: '8px 16px', fontSize: 11,
           background: 'rgba(239,68,68,0.1)', color: '#ef4444',
@@ -367,62 +448,83 @@ export default function VoicePanel() {
         </div>
       )}
 
-      {/* Transcript Body */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', fontSize: 13 }}>
-        {transcriptEntries.length === 0 && !interimText ? (
-          <div style={{ color: 'rgba(255,255,255,0.25)', textAlign: 'center', paddingTop: 32 }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>🎙️</div>
-            <p style={{ fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
-              Click Listen to begin
-            </p>
-            <p style={{ fontSize: 11, lineHeight: 1.6 }}>
-              Preach naturally. The AI will detect scriptures in real time.
-            </p>
-            <div style={{
-              marginTop: 18, padding: '12px 14px',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.04)',
-              borderRadius: 10, textAlign: 'left', fontSize: 11, lineHeight: 1.8,
-            }}>
-              <div style={{ color: '#f5c842', fontWeight: 700, marginBottom: 6 }}>Try saying:</div>
-              <div>"For God so loved the world…"</div>
-              <div>"The Lord is my shepherd…"</div>
-              <div>"Walk by faith not by sight"</div>
-              <div>"Switch to NIV" / "Next verse"</div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {transcriptEntries.map(entry => (
-              <motion.div
-                key={entry.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                style={{ marginBottom: 8, lineHeight: 1.6 }}
-              >
-                <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, marginRight: 8, fontFamily: 'monospace' }}>
-                  {entry.timestamp}
-                </span>
-                <span style={{ color: 'rgba(255,255,255,0.85)' }}>{entry.text}</span>
-              </motion.div>
-            ))}
-            {interimText && (
+      {/* Body Area: Split into Live Transcript (left) and Real-time Matches (right) */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left: Transcript Area */}
+        <div ref={scrollRef} style={{ flex: 1.6, overflowY: 'auto', padding: '12px 16px', fontSize: 13, borderRight: '1px solid hsla(255,255,255,0.06)' }}>
+          {transcriptEntries.length === 0 && !interimText ? (
+            <div style={{ color: 'rgba(255,255,255,0.25)', textAlign: 'center', paddingTop: 32 }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>🎙️</div>
+              <p style={{ fontWeight: 600, color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
+                Click Listen to begin
+              </p>
+              <p style={{ fontSize: 11, lineHeight: 1.6 }}>
+                Preach naturally. The AI will detect scriptures in real time.
+              </p>
               <div style={{
-                color: '#f5c842',
-                fontStyle: 'italic',
-                fontSize: 12,
-                marginTop: 4,
-                opacity: 0.8,
-                background: 'rgba(245,200,66,0.05)',
-                padding: '4px 8px',
-                borderRadius: 6,
-                display: 'inline-block'
+                marginTop: 18, padding: '12px 14px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.04)',
+                borderRadius: 10, textAlign: 'left', fontSize: 11, lineHeight: 1.8,
               }}>
-                🎤 {interimText}
+                <div style={{ color: '#f5c842', fontWeight: 700, marginBottom: 6 }}>Try saying:</div>
+                <div>"For God so loved the world…"</div>
+                <div>"The Lord is my shepherd…"</div>
+                <div>"Walk by faith not by sight"</div>
+                <div>"Switch to NIV" / "Next verse"</div>
               </div>
+            </div>
+          ) : (
+            <>
+              {transcriptEntries.map(entry => (
+                <motion.div
+                  key={entry.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  style={{ marginBottom: 8, lineHeight: 1.6 }}
+                >
+                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10, marginRight: 8, fontFamily: 'monospace' }}>
+                    {entry.timestamp}
+                  </span>
+                  <span style={{ color: 'rgba(255,255,255,0.85)' }}>{entry.text}</span>
+                </motion.div>
+              ))}
+              {interimText && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', marginTop: 4, lineHeight: 1.6 }}>
+                  <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: 10, marginRight: 8, fontFamily: 'monospace' }}>
+                    --:--:--
+                  </span>
+                  <span style={{ color: 'rgba(245,200,66,0.75)', fontStyle: 'italic' }}>
+                    {interimText}...
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Right: Scripture Matches Sidebar */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px', background: 'rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, flexShrink: 0 }}>
+            📖 Scripture Matches
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {detectedScriptures.length === 0 ? (
+              <div style={{ color: 'rgba(255,255,255,0.2)', textAlign: 'center', fontSize: 11, paddingTop: 40 }}>
+                No scriptures detected yet.
+              </div>
+            ) : (
+              detectedScriptures.map((match, idx) => (
+                <ScriptureMatchCard
+                  key={match._id || `${match.book}-${match.chapter}-${match.verseStart}-${idx}`}
+                  match={match}
+                  activeTranslation={activeTranslation}
+                  onProject={handleProject}
+                />
+              ))
             )}
-          </>
-        )}
+          </div>
+        </div>
       </div>
       {/* ✨ NOW SHOWING — Bible Verse Card */}
       <AnimatePresence>

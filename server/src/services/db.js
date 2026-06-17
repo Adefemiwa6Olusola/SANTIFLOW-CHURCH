@@ -18,7 +18,8 @@ function initDb() {
     const initialData = {
       users: [],
       history: [],
-      queue: []
+      queue: [],
+      resetTokens: []
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf8');
   }
@@ -29,10 +30,13 @@ function readDb() {
   initDb();
   try {
     const data = fs.readFileSync(DB_FILE, 'utf8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    // Ensure resetTokens array exists (migration for existing DBs)
+    if (!parsed.resetTokens) parsed.resetTokens = [];
+    return parsed;
   } catch (err) {
     console.error('Error reading database file, resetting:', err);
-    return { users: [], history: [], queue: [] };
+    return { users: [], history: [], queue: [], resetTokens: [] };
   }
 }
 
@@ -82,6 +86,51 @@ export const db = {
     data.users.push(newUser);
     writeDb(data);
     return newUser;
+  },
+
+  updateUserPassword(userId, hashedPassword) {
+    const data = readDb();
+    const idx = data.users.findIndex(u => u.id === userId);
+    if (idx === -1) return false;
+    data.users[idx].password = hashedPassword;
+    data.users[idx].updatedAt = new Date().toISOString();
+    writeDb(data);
+    return true;
+  },
+
+  // ── Password Reset Tokens ────────────────────────
+  createResetToken(tokenData) {
+    const data = readDb();
+    // Remove any existing tokens for this user (one active token per user)
+    data.resetTokens = data.resetTokens.filter(t => t.userId !== tokenData.userId);
+    data.resetTokens.push({
+      ...tokenData,
+      createdAt: new Date().toISOString()
+    });
+    writeDb(data);
+    return tokenData;
+  },
+
+  findResetToken(token) {
+    const data = readDb();
+    return data.resetTokens.find(t => t.token === token) || null;
+  },
+
+  deleteResetToken(token) {
+    const data = readDb();
+    data.resetTokens = data.resetTokens.filter(t => t.token !== token);
+    writeDb(data);
+  },
+
+  cleanExpiredTokens() {
+    const data = readDb();
+    const now = Date.now();
+    const before = data.resetTokens.length;
+    data.resetTokens = data.resetTokens.filter(t => t.expiresAt > now);
+    if (data.resetTokens.length < before) {
+      writeDb(data);
+      console.log(`[DB] Cleaned ${before - data.resetTokens.length} expired reset token(s)`);
+    }
   },
 
   // History API
@@ -148,3 +197,4 @@ export const db = {
 };
 
 export default db;
+

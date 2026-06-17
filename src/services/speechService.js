@@ -34,10 +34,41 @@ class SpeechService {
     this.reconnectAttempts = 0;
     this.maxReconnectDelay = 50;
     this.baseReconnectDelay = 50;
+
+    // Speech Engine configuration
+    this.engineType = 'browser'; // 'browser' | 'deepgram'
+    this.deepgramApiKey = null;
+    this.socket = null;
+    this.mediaRecorder = null;
   }
 
   teardownSpeechRecognition() {
     clearTimeout(this.restartTimeout);
+    
+    // Close Deepgram WebSocket connection
+    if (this.socket) {
+      console.log('[SpeechService] Closing Deepgram WebSocket connection');
+      this.socket.onopen = null;
+      this.socket.onmessage = null;
+      this.socket.onerror = null;
+      this.socket.onclose = null;
+      try {
+        this.socket.close();
+      } catch (e) {}
+      this.socket = null;
+    }
+    
+    // Stop Deepgram MediaRecorder
+    if (this.mediaRecorder) {
+      console.log('[SpeechService] Stopping Deepgram MediaRecorder');
+      try {
+        if (this.mediaRecorder.state !== 'inactive') {
+          this.mediaRecorder.stop();
+        }
+      } catch (e) {}
+      this.mediaRecorder = null;
+    }
+
     if (this.recognition) {
       const timestamp = new Date().toLocaleTimeString();
       console.log(`[SpeechService @ ${timestamp}] Tearing down SpeechRecognition instance`);
@@ -316,55 +347,173 @@ class SpeechService {
     return true;
   }
 
+  startDeepgram() {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[SpeechService @ ${timestamp}] Connecting to Deepgram streaming API`);
+
+    const apiKey = this.deepgramApiKey || (typeof window !== 'undefined' && localStorage.getItem('sanctiflow_deepgram_api_key'));
+    if (!apiKey) {
+      const errorMsg = 'Deepgram API Key is missing. Please enter it in Settings.';
+      this.emit('error', { message: errorMsg });
+      this.emit('status', { status: 'stopped' });
+      return;
+    }
+
+    if (!this.stream) {
+      const errorMsg = 'Audio stream not initialized. Cannot stream to Deepgram.';
+      this.emit('error', { message: errorMsg });
+      this.emit('status', { status: 'stopped' });
+      return;
+    }
+
+    try {
+      // Deepgram Streaming WebSocket endpoint
+      // Using query parameters for API key authentication on connection setup
+      const url = `wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&model=nova-2-general&language=en`;
+      this.socket = new WebSocket(url, ['token', apiKey]);
+
+      this.socket.onopen = () => {
+        console.log('[SpeechService] Deepgram WebSocket connection established');
+        this.emit('status', { status: 'listening' });
+
+        try {
+          // Initialize MediaRecorder to stream containerized audio
+          let options = { mimeType: 'audio/webm' };
+          if (typeof MediaRecorder !== 'undefined' && !MediaRecorder.isTypeSupported('audio/webm')) {
+            if (MediaRecorder.isTypeSupported('audio/ogg')) {
+              options = { mimeType: 'audio/ogg' };
+            } else {
+              options = {}; // browser default
+            }
+          }
+
+          this.mediaRecorder = new MediaRecorder(this.stream, options);
+          this.mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0 && this.socket && this.socket.readyState === WebSocket.OPEN) {
+              this.socket.send(event.data);
+            }
+          };
+
+          // Stream audio in 200ms slices for fast latency response
+          this.mediaRecorder.start(200);
+          console.log('[SpeechService] MediaRecorder streaming started');
+        } catch (mediaErr) {
+          console.error('[SpeechService] MediaRecorder start failed:', mediaErr);
+          this.emit('error', { message: `MediaRecorder failed: ${mediaErr.message}` });
+          this.stop();
+        }
+      };
+
+      this.socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.channel && data.channel.alternatives && data.channel.alternatives[0]) {
+            const transcript = data.channel.alternatives[0].transcript;
+            const isFinal = data.is_final;
+            const confidence = data.channel.alternatives[0].confidence;
+
+            if (transcript) {
+              if (isFinal) {
+                this.finalTranscript += transcript + ' ';
+                const cleanText = transcript.trim();
+                const ts = new Date().toLocaleTimeString();
+                console.log(`[SpeechService @ ${ts}] [Deepgram Final] "${cleanText}"`);
+                this.emit('transcript', {
+                  text: cleanText,
+                  fullText: this.finalTranscript.trim(),
+                  isFinal: true,
+                  confidence: confidence || 0.99
+                });
+              } else {
+                this.emit('interim', {
+                  text: transcript.trim(),
+                  isFinal: false
+                });
+              }
+            }
+          }
+        } catch (jsonErr) {
+          console.warn('[SpeechService] Error parsing Deepgram WebSocket message:', jsonErr);
+        }
+      };
+
+      this.socket.onerror = (err) => {
+        console.error('[SpeechService] Deepgram WebSocket error:', err);
+        this.emit('error', { message: 'Deepgram streaming socket error. Check key or network.' });
+      };
+
+      this.socket.onclose = (event) => {
+        console.log('[SpeechService] Deepgram WebSocket closed:', event.code, event.reason);
+        if (this.isListening && !this.isPaused) {
+          console.log('[SpeechService] Reconnecting Deepgram...');
+          this.reconnect();
+        }
+      };
+
+    } catch (err) {
+      console.error('[SpeechService] Deepgram connection failed:', err);
+      this.emit('error', { message: `Deepgram connection failed: ${err.message}` });
+      this.reconnect();
+    }
+  }
+
   reconnect() {
     clearTimeout(this.restartTimeout);
-    // Always restart in exactly 50ms — imperceptible to the user
-    // No exponential backoff: the speech engine handles rate limiting internally
+    // Use 1.5s delay for Deepgram reconnects to avoid socket hammering, 50ms for native
+    const delay = this.engineType === 'deepgram' ? 1500 : 50;
+
     this.restartTimeout = setTimeout(() => {
       if (this.isListening && !this.isPaused) {
-        if (!this.recognition) {
-          this.init();
-        }
-        try {
-          this.recognition.start();
-        } catch (e) {
-          // Already active or mid-transition — next onend will trigger another reconnect
-          console.warn('[SpeechService] Start skipped (already running):', e.message);
+        if (this.engineType === 'deepgram') {
+          this.startDeepgram();
+        } else {
+          if (!this.recognition) {
+            this.init();
+          }
+          try {
+            this.recognition.start();
+          } catch (e) {
+            console.warn('[SpeechService] Start skipped (already running):', e.message);
+          }
         }
       }
-    }, 50);
+    }, delay);
   }
 
   async start(deviceId = null) {
     const timestamp = new Date().toLocaleTimeString();
-    console.log(`[SpeechService @ ${timestamp}] Activating speech recognition pipeline (start)`);
+    console.log(`[SpeechService @ ${timestamp}] Activating speech recognition pipeline (start) using engine: ${this.engineType}`);
     this.isListening = true;
     this.isPaused = false;
     
     // Keep hardware microphone monitoring active
     await this.startAudioMonitoring(deviceId);
 
-    // Cleanly tear down any existing browser SpeechRecognition channels first
+    // Cleanly tear down any existing browser SpeechRecognition/Deepgram channels first
     this.teardownSpeechRecognition();
 
-    // Use a brief delay to let the browser release the speech port to avoid race conflicts
-    setTimeout(() => {
-      if (!this.isListening || this.isPaused) {
-        console.log('[SpeechService] start aborted: session stopped during initial delay');
-        return;
-      }
+    if (this.engineType === 'deepgram') {
+      this.startDeepgram();
+    } else {
+      // Browser SpeechRecognition: Use a brief delay to let the browser release the speech port to avoid race conflicts
+      setTimeout(() => {
+        if (!this.isListening || this.isPaused) {
+          console.log('[SpeechService] start aborted: session stopped during initial delay');
+          return;
+        }
 
-      this.init();
-      
-      try {
-        this.recognition.start();
-        const startTs = new Date().toLocaleTimeString();
-        console.log(`[SpeechService @ ${startTs}] Recognition engine listening successfully`);
-      } catch (e) {
-        console.warn('[SpeechService] Engine start failed, queueing reconnect:', e.message);
-        this.reconnect();
-      }
-    }, 150);
+        this.init();
+        
+        try {
+          this.recognition.start();
+          const startTs = new Date().toLocaleTimeString();
+          console.log(`[SpeechService @ ${startTs}] Recognition engine listening successfully`);
+        } catch (e) {
+          console.warn('[SpeechService] Engine start failed, queueing reconnect:', e.message);
+          this.reconnect();
+        }
+      }, 150);
+    }
   }
 
   stop() {

@@ -70,6 +70,20 @@ const REFERENCE_REGEX = new RegExp(
 // Pre-compiled list of the 45+ most popular scriptures preached in churches
 const POPULAR_VERSES = [
   {
+    book: "Psalms", chapter: 100, verseStart: 5, verseEnd: 5,
+    phrases: [
+      "the lord is good",
+      "for the lord is good his mercy is everlasting"
+    ]
+  },
+  {
+    book: "Psalms", chapter: 34, verseStart: 8, verseEnd: 8,
+    phrases: [
+      "taste and see that the lord is good",
+      "o taste and see that the lord is good"
+    ]
+  },
+  {
     book: "John", chapter: 3, verseStart: 16, verseEnd: 16,
     phrases: [
       "for God so loved the world that he gave his only begotten son",
