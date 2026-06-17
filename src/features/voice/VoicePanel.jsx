@@ -15,28 +15,42 @@ export default function VoicePanel() {
   const appendToBuffer = useAppStore(s => s.appendToBuffer);
   const clearTranscript = useAppStore(s => s.clearTranscript);
   const setSessionStartTime = useAppStore(s => s.setSessionStartTime);
+  const currentVerse = useAppStore(s => s.currentVerse);
   
   const scrollRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
   const [btnHovered, setBtnHovered] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  // Track session start time in a ref so it NEVER resets during reconnects
+  const sessionStartRef = useRef(null);
+  const timerRef = useRef(null);
 
   const isSupported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
-  // Timer logic for live display
+
+  // Timer: runs continuously once session starts, never resets on reconnect
   useEffect(() => {
-    if (voiceStatus === 'listening') {
-      const interval = setInterval(() => {
-        if (sessionStartTime) {
-          setElapsed(Math.floor((Date.now() - sessionStartTime) / 1000));
-        }
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
+    if (voiceStatus === 'listening' || voiceStatus === 'connecting' || voiceStatus === 'reconnecting') {
+      // First time going live — set start ref once
+      if (!sessionStartRef.current) {
+        sessionStartRef.current = Date.now();
+        setSessionStartTime(sessionStartRef.current);
+      }
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => {
+          setElapsed(Math.floor((Date.now() - sessionStartRef.current) / 1000));
+        }, 1000);
+      }
+    } else if (voiceStatus === 'stopped' || voiceStatus === 'error') {
+      // Only clear timer when user explicitly stops
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+      sessionStartRef.current = null;
       setElapsed(0);
     }
-  }, [voiceStatus, sessionStartTime]);
+    return () => {};
+  }, [voiceStatus]);
 
   useEffect(() => {
     // Listen to Speech events
@@ -53,10 +67,7 @@ export default function VoicePanel() {
 
     const unsubStatus = speechService.on('status', (data) => {
       setVoiceStatus(data.status);
-      if (data.status === 'listening') {
-        setSessionStartTime(Date.now());
-        setErrorMessage('');
-      }
+      // DO NOT reset sessionStartTime here — timer is managed by sessionStartRef above
     });
 
     const unsubError = (data) => {
@@ -120,22 +131,20 @@ export default function VoicePanel() {
   const isProcessing = aiStatus === 'processing';
   const isError = voiceStatus === 'error' || aiStatus === 'error';
   const isPaused = voiceStatus === 'paused';
-
-  // Unified session active state to prevent button state flickering during transient recoveries
+  // Session is active as long as it hasn't been explicitly stopped
   const isSessionActive = isListeningActive || isConnecting;
 
-  const statusColor = 
+  const statusColor =
     isError ? '#ef4444' :
     isProcessing ? '#a855f7' :
-    isListeningActive ? '#22c55e' :
-    isConnecting ? '#e2a13c' :
+    isSessionActive ? '#22c55e' :  // Green for ALL active states (connecting treated as active)
     isPaused ? '#f5c842' : '#64748b';
 
+  // Only show visible state — never expose Connecting/Reconnecting to operator
   const statusText =
     isError ? 'Error' :
-    isProcessing ? 'Processing' :
-    isListeningActive ? 'Listening' :
-    isConnecting ? (voiceStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting...') :
+    isProcessing ? 'AI Active' :
+    isSessionActive ? 'Listening' :   // Reconnects are invisible
     isPaused ? 'Paused' : 'Ready';
 
   const isActive = isSessionActive;
@@ -415,6 +424,65 @@ export default function VoicePanel() {
           </>
         )}
       </div>
+      {/* ✨ NOW SHOWING — Bible Verse Card */}
+      <AnimatePresence>
+        {currentVerse && (
+          <motion.div
+            key={`${currentVerse.book}-${currentVerse.chapter}-${currentVerse.verseStart}`}
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            style={{
+              margin: '0 12px 12px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(245,200,66,0.08) 100%)',
+              border: '1px solid rgba(168,85,247,0.3)',
+              padding: '12px 14px',
+              boxShadow: '0 0 20px rgba(168,85,247,0.15)',
+              flexShrink: 0,
+            }}
+          >
+            {/* Header row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <motion.span
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                style={{ fontSize: 16 }}>📖</motion.span>
+              <span style={{
+                fontSize: 13, fontWeight: 800,
+                background: 'linear-gradient(90deg, #a855f7, #f5c842)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                letterSpacing: '0.03em'
+              }}>
+                {currentVerse.reference}
+              </span>
+              <span style={{
+                marginLeft: 'auto', fontSize: 9, fontWeight: 700,
+                color: '#a855f7', background: 'rgba(168,85,247,0.12)',
+                padding: '2px 7px', borderRadius: 4,
+                border: '1px solid rgba(168,85,247,0.2)', textTransform: 'uppercase', letterSpacing: '0.05em'
+              }}>
+                {currentVerse.translation || 'KJV'}
+              </span>
+            </div>
+            {/* Verse text */}
+            <p style={{
+              margin: 0, fontSize: 12, lineHeight: 1.65,
+              color: 'rgba(255,255,255,0.88)', fontStyle: 'italic',
+              borderLeft: '2px solid rgba(168,85,247,0.4)',
+              paddingLeft: 10
+            }}>
+              "{currentVerse.text || currentVerse.verses?.map(v => v.text).join(' ')}"
+            </p>
+            {currentVerse.confidence && (
+              <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                AI confidence: {Math.round(currentVerse.confidence * 100)}%
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

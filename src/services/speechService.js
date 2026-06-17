@@ -30,10 +30,10 @@ class SpeechService {
     this.selectedDeviceId = null;
     this.devices = [];
 
-    // Reconnection & Error Backoff State
+    // Reconnection state — always instant (50ms) to avoid mic gaps
     this.reconnectAttempts = 0;
-    this.maxReconnectDelay = 4000;
-    this.baseReconnectDelay = 150;
+    this.maxReconnectDelay = 50;
+    this.baseReconnectDelay = 50;
   }
 
   teardownSpeechRecognition() {
@@ -190,8 +190,32 @@ class SpeechService {
     this.recognition = new SpeechRecognition();
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
-    this.recognition.lang = '';          // Empty = browser uses system locale (avoids language mismatch)
-    this.recognition.maxAlternatives = 3; // Consider up to 3 alternatives for better accuracy on accents
+    this.recognition.lang = '';           // System locale — avoids language rejection
+    this.recognition.maxAlternatives = 3;
+
+    // Boost recognition of Bible vocabulary using SpeechGrammarList
+    try {
+      const SpeechGrammarList = window.SpeechGrammarList || window.webkitSpeechGrammarList;
+      if (SpeechGrammarList) {
+        const grammarList = new SpeechGrammarList();
+        const bibleGrammar = `#JSGF V1.0; grammar bible;
+          public <book> = genesis | exodus | leviticus | numbers | deuteronomy |
+            joshua | judges | ruth | samuel | kings | chronicles | ezra | nehemiah |
+            esther | job | psalms | psalm | proverbs | ecclesiastes | isaiah | jeremiah |
+            lamentations | ezekiel | daniel | hosea | joel | amos | obadiah | jonah |
+            micah | nahum | habakkuk | zephaniah | haggai | zechariah | malachi |
+            matthew | mark | luke | john | acts | romans | corinthians | galatians |
+            ephesians | philippians | colossians | thessalonians | timothy | titus |
+            philemon | hebrews | james | peter | jude | revelation |
+            praise the lord | hallelujah | amen | blessed | holy spirit | jesus | christ |
+            faith | hope | love | salvation | grace | mercy | gospel | scripture;
+        `;
+        grammarList.addFromString(bibleGrammar, 1);
+        this.recognition.grammars = grammarList;
+      }
+    } catch (e) {
+      // Grammar API not supported — continue without it
+    }
 
     this.recognition.onstart = () => {
       const timestamp = new Date().toLocaleTimeString();
@@ -260,11 +284,10 @@ class SpeechService {
         this.emit('error', { message: errorMsg, code: event.error });
         this.stop();
       } else if (event.error === 'no-speech') {
-        // no-speech = engine timed out waiting for audio — immediately restart
-        console.log('[SpeechService] no-speech timeout: restarting recognition loop now.');
-        this.emit('status', { status: 'connecting' });
-        // Must explicitly reconnect — the engine stops itself on no-speech
+        // Silently restart — do NOT show any status change to the user
+        // This keeps the timer running and UI stable during natural pauses
         this.reconnect();
+        return; // skip status emit entirely
       } else if (event.error === 'network') {
         // Suppress displaying network error in operator panel to prevent panic.
         // Instead, mark status as 'reconnecting' and perform automatic recovery.
@@ -295,16 +318,8 @@ class SpeechService {
 
   reconnect() {
     clearTimeout(this.restartTimeout);
-    
-    // Calculate exponential backoff delay to avoid slamming Chrome's sockets
-    const delay = Math.min(
-      this.baseReconnectDelay * Math.pow(1.5, this.reconnectAttempts),
-      this.maxReconnectDelay
-    );
-    
-    this.reconnectAttempts++;
-    console.log(`[SpeechService] Reconnecting in ${Math.round(delay)}ms (Attempt #${this.reconnectAttempts})`);
-
+    // Always restart in exactly 50ms — imperceptible to the user
+    // No exponential backoff: the speech engine handles rate limiting internally
     this.restartTimeout = setTimeout(() => {
       if (this.isListening && !this.isPaused) {
         if (!this.recognition) {
@@ -313,11 +328,11 @@ class SpeechService {
         try {
           this.recognition.start();
         } catch (e) {
-          // Already active or transition state, wait for next onend trigger
-          console.warn('[SpeechService] Start failed during reconnect (already running):', e.message);
+          // Already active or mid-transition — next onend will trigger another reconnect
+          console.warn('[SpeechService] Start skipped (already running):', e.message);
         }
       }
-    }, delay);
+    }, 50);
   }
 
   async start(deviceId = null) {

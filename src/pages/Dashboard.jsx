@@ -151,8 +151,8 @@ export default function Dashboard() {
       const cleanText = text.trim();
       const hasReferencePattern = /\d+/.test(cleanText) || /(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalm|proverbs|ecclesiastes|song|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)/i.test(cleanText);
 
-      // Require at least 4 characters, and if under 12 characters, it must look like a scripture reference
-      if (cleanText.length < 4 || (cleanText.length < 12 && !hasReferencePattern)) return;
+      // Require at least 3 characters, and if under 10, must look like a scripture reference
+      if (cleanText.length < 3 || (cleanText.length < 10 && !hasReferencePattern)) return;
 
       processingRef.current = true;
       setAiStatus('processing');
@@ -244,64 +244,15 @@ export default function Dashboard() {
     if (!text) return;
 
     const hasReferencePattern = /\d+/.test(text) || /(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalm|proverbs|ecclesiastes|song|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)/i.test(text);
-    const delay = hasReferencePattern ? 300 : 650; // Optimized response latency (down from 400/800)
+    const delay = hasReferencePattern ? 100 : 350; // Fast: 100ms for refs, 350ms for phrases
 
     const handler = setTimeout(process, delay);
     return () => clearTimeout(handler);
   }, [transcriptBuffer, clearBuffer, autoMode, activeTranslation, isLive, projectVerse]);
 
-  // ── Real-time Interim Transcript Processing ───────────────────
-  const interimText = useAppStore(s => s.interimText);
-  useEffect(() => {
-    const text = interimText?.trim();
-    if (!text || text.length < 5) return;
-
-    // Check if the interim text matches a bible book name, a number pattern, or is a longer phrase
-    const hasReferencePattern = /\d+/.test(text) || /(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalm|proverbs|ecclesiastes|song|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)/i.test(text) || text.length >= 15;
-    if (!hasReferencePattern) return;
-
-    // Avoid duplicate checks for identical interim segments
-    if (text === lastCheckedInterimRef.current) return;
-    lastCheckedInterimRef.current = text;
-
-    const checkInterim = async () => {
-      try {
-        const { references, commands } = await detectScriptures(text);
-
-        for (const ref of (references || [])) {
-          if (ref.confidence >= 0.70 && autoMode) {
-            const verseData = await fetchVerse(activeTranslation, ref.book, ref.chapter, ref.verseStart, ref.verseEnd);
-            
-            // Check if we are already showing this verse to avoid double projection
-            const isAlreadyShowing = currentVerse &&
-              currentVerse.book === verseData.book &&
-              currentVerse.chapter === verseData.chapter &&
-              currentVerse.verseStart === verseData.verseStart &&
-              currentVerse.translation === verseData.translation;
-
-            if (!isAlreadyShowing) {
-              await projectVerse({ ...verseData, detectedBy: 'ai', confidence: ref.confidence });
-              addCommandLog({
-                action: 'auto_projected_interim',
-                message: `⚡ Realtime auto-projected: ${verseData.reference}`,
-                matchedText: ref.matchedText || text,
-              });
-            }
-            break;
-          }
-        }
-
-        for (const cmd of (commands || [])) {
-          await handleVoiceCommand(cmd);
-        }
-      } catch (err) {
-        console.warn('[Dashboard] Interim process error:', err);
-      }
-    };
-
-    const handler = setTimeout(checkInterim, 250); // Fast 250ms debounce for interim speech
-    return () => clearTimeout(handler);
-  }, [interimText, autoMode, activeTranslation, projectVerse, currentVerse]);
+  // ── Real-time Interim Transcript Processing REMOVED ──────────
+  // Interim processing caused double API calls and race conditions.
+  // The main buffer processor at 100ms is fast enough for live use.
 
   // ── Voice Command Handler ─────────────────────────────────────
   const handleVoiceCommand = async (cmd) => {
