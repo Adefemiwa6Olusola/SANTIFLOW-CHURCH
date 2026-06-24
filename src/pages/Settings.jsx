@@ -18,6 +18,8 @@ export default function Settings() {
   const setSpeechEngine = useAppStore(s => s.setSpeechEngine);
   const deepgramApiKey = useAppStore(s => s.deepgramApiKey);
   const setDeepgramApiKey = useAppStore(s => s.setDeepgramApiKey);
+  const voiceCommandsEnabled = useAppStore(s => s.voiceCommandsEnabled);
+  const setVoiceCommandsEnabled = useAppStore(s => s.setVoiceCommandsEnabled);
 
   const [tempChurch, setTempChurch] = useState(churchName);
   const [tempKey, setTempKey] = useState(deepgramApiKey);
@@ -169,6 +171,27 @@ export default function Settings() {
               position: 'absolute', top: 3, borderRadius: '50%', width: 20, height: 20,
               background: 'white', transition: 'left 0.2s ease',
               left: autoMode ? 25 : 3, boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+            }} />
+          </div>
+        </div>
+
+        {/* Voice Command Safety Lock */}
+        <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'white', marginBottom: 3 }}>Voice Command Safety Lock</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.4 }}>
+              When ON: executes spoken commands like "clear screen" or "next verse".<br />
+              When OFF: prevents accidental triggers during the sermon.
+            </div>
+          </div>
+          <div onClick={() => setVoiceCommandsEnabled(!voiceCommandsEnabled)} style={{
+            width: 48, height: 26, borderRadius: 13, cursor: 'pointer', flexShrink: 0, position: 'relative',
+            background: voiceCommandsEnabled ? '#f5c842' : 'rgba(255,255,255,0.1)', transition: 'all 0.2s ease',
+          }}>
+            <div style={{
+              position: 'absolute', top: 3, borderRadius: '50%', width: 20, height: 20,
+              background: 'white', transition: 'left 0.2s ease',
+              left: voiceCommandsEnabled ? 25 : 3, boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
             }} />
           </div>
         </div>

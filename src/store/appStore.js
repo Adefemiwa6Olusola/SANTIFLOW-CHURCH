@@ -195,6 +195,22 @@ const useAppStore = create((set, get) => ({
     } catch {}
     set({ deepgramApiKey: key });
   },
+
+  // ── Voice Commands Safety Lock Settings ──────────
+  voiceCommandsEnabled: (() => {
+    try {
+      const val = localStorage.getItem('sanctiflow_voice_commands_enabled');
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  })(),
+  setVoiceCommandsEnabled: (enabled) => {
+    try {
+      localStorage.setItem('sanctiflow_voice_commands_enabled', String(enabled));
+    } catch {}
+    set({ voiceCommandsEnabled: enabled });
+  },
 }));
 
 export default useAppStore;

@@ -103,10 +103,59 @@ export function getCurrentUser() {
 }
 
 export async function resetPassword(email) {
-  // In a full implementation, this calls /api/auth/reset-password
-  // Since password reset usually sends an email, we simulate for now or return true
-  await new Promise(r => setTimeout(r, 800));
-  return true;
+  try {
+    const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to request password reset');
+    }
+    return true;
+  } catch (error) {
+    console.error('[AuthService] Reset password request failed:', error.message);
+    throw error;
+  }
+}
+
+export async function verifyResetToken(token) {
+  try {
+    const response = await fetch(`${API_BASE}/auth/reset-password/${token}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Invalid or expired reset link');
+    }
+    return data;
+  } catch (error) {
+    console.error('[AuthService] Verify reset token failed:', error.message);
+    throw error;
+  }
+}
+
+export async function resetPasswordSubmit(token, newPassword) {
+  try {
+    const response = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ token, newPassword })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reset password');
+    }
+    return true;
+  } catch (error) {
+    console.error('[AuthService] Reset password submit failed:', error.message);
+    throw error;
+  }
 }
 
 export function isAuthenticated() {

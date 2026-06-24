@@ -225,10 +225,15 @@ export default function Dashboard() {
           }
         }
 
-        // Handle voice commands
+        // Handle voice commands (if enabled)
+        const voiceCommandsEnabled = useAppStore.getState().voiceCommandsEnabled;
         for (const cmd of (commands || [])) {
           addCommandLog({ ...cmd, message: cmd.action?.replace(/_/g, ' ') });
-          await handleVoiceCommand(cmd);
+          if (voiceCommandsEnabled) {
+            await handleVoiceCommand(cmd);
+          } else {
+            console.log(`[Dashboard] Voice command execution skipped (Safety Lock is enabled): ${cmd.action}`);
+          }
         }
 
       } catch (err) {

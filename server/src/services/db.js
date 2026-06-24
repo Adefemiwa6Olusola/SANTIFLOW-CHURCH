@@ -19,7 +19,8 @@ function initDb() {
       users: [],
       history: [],
       queue: [],
-      resetTokens: []
+      resetTokens: [],
+      otps: []
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2), 'utf8');
   }
@@ -31,8 +32,9 @@ function readDb() {
   try {
     const data = fs.readFileSync(DB_FILE, 'utf8');
     const parsed = JSON.parse(data);
-    // Ensure resetTokens array exists (migration for existing DBs)
+    // Ensure arrays exist (migration for existing DBs)
     if (!parsed.resetTokens) parsed.resetTokens = [];
+    if (!parsed.otps) parsed.otps = [];
     return parsed;
   } catch (err) {
     console.error('Error reading database file, resetting:', err);
@@ -131,6 +133,49 @@ export const db = {
       writeDb(data);
       console.log(`[DB] Cleaned ${before - data.resetTokens.length} expired reset token(s)`);
     }
+  },
+
+  // ── OTP verification ─────────────────────────────
+  createOtp(otpData) {
+    const data = readDb();
+    if (!data.otps) data.otps = [];
+    // Remove any existing OTP records for this email
+    data.otps = data.otps.filter(o => o.email !== otpData.email);
+    const newOtp = {
+      ...otpData,
+      createdAt: new Date().toISOString()
+    };
+    data.otps.push(newOtp);
+    writeDb(data);
+    return newOtp;
+  },
+
+  findOtpByEmail(email) {
+    const data = readDb();
+    if (!data.otps) return null;
+    const normalized = email.toLowerCase().trim();
+    return data.otps.find(o => o.email === normalized) || null;
+  },
+
+  deleteOtp(email) {
+    const data = readDb();
+    if (!data.otps) return;
+    const normalized = email.toLowerCase().trim();
+    data.otps = data.otps.filter(o => o.email !== normalized);
+    writeDb(data);
+  },
+
+  updateOtpAttempts(email, attempts) {
+    const data = readDb();
+    if (!data.otps) return;
+    const normalized = email.toLowerCase().trim();
+    const idx = data.otps.findIndex(o => o.email === normalized);
+    if (idx !== -1) {
+      data.otps[idx].attempts = attempts;
+      writeDb(data);
+      return true;
+    }
+    return false;
   },
 
   // History API

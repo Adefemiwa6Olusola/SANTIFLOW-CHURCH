@@ -50,6 +50,10 @@ const aiLimiter = rateLimit({
 app.post('/api/auth/signup', authController.signup);
 app.post('/api/auth/login', authController.login);
 app.get('/api/auth/me', requireAuth, authController.getCurrentUser);
+app.post('/api/auth/forgot-password', authController.requestPasswordReset);
+app.post('/api/auth/verify-otp', authController.verifyOtp);
+app.get('/api/auth/reset-password/:token', authController.verifyResetToken);
+app.post('/api/auth/reset-password', authController.resetPassword);
 
 // AI endpoints (protected)
 app.post('/api/ai/detect', requireAuth, aiLimiter, aiController.detect);

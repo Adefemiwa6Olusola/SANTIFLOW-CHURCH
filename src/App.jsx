@@ -7,6 +7,7 @@ import Overlay from './pages/Overlay';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Settings from './pages/Settings';
 import ToastContainer from './components/common/Toast';
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Operator Dashboard */}
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

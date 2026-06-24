@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import db from '../services/db.js';
-import { sendPasswordResetEmail } from '../services/emailService.js';
+import { sendPasswordResetEmail, sendOtpEmail } from '../services/emailService.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_church_assistant_key_2026';
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
@@ -115,7 +115,7 @@ export async function getCurrentUser(req, res) {
   }
 }
 
-// ── Password Reset: Step 1 — Request reset (sends email) ──────
+// ── Password Reset: Step 1 — Request reset (sends OTP and token) ──────
 export async function requestPasswordReset(req, res) {
   const { email } = req.body;
 
@@ -126,7 +126,7 @@ export async function requestPasswordReset(req, res) {
   try {
     // SECURITY: Always respond with the same message whether user exists or not
     // This prevents email enumeration attacks
-    const successMessage = 'If an account exists with that email, a password reset link has been sent.';
+    const successMessage = 'If an account exists with that email, a verification code has been sent.';
 
     const user = db.findUserByEmail(email);
     if (!user) {
@@ -135,28 +135,55 @@ export async function requestPasswordReset(req, res) {
       return res.json({ message: successMessage });
     }
 
-    // Generate a cryptographically secure token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = Date.now() + RESET_TOKEN_EXPIRY_MS;
+    // 1. Generate 6-digit numeric OTP code
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = Date.now() + 15 * 60 * 1000; // 15 minutes
 
-    // Store the token
+    // Anti-spam cooldown check (60 seconds)
+    const existingOtp = db.findOtpByEmail(email);
+    if (existingOtp && Date.now() - new Date(existingOtp.createdAt).getTime() < 60 * 1000) {
+      return res.status(429).json({ error: 'Please wait 60 seconds before requesting another code.' });
+    }
+
+    // Hash the OTP securely
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+    // Save the OTP to DB
+    db.createOtp({
+      email: user.email,
+      userId: user.id,
+      otpHash,
+      expiresAt: otpExpiry,
+      attempts: 0,
+      verified: false
+    });
+
+    // 2. Generate a traditional token link for backwards compatibility
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const tokenExpiry = Date.now() + RESET_TOKEN_EXPIRY_MS;
+
     db.createResetToken({
       token: resetToken,
       userId: user.id,
       email: user.email,
-      expiresAt
+      expiresAt: tokenExpiry
     });
 
-    // Determine the frontend URL for the reset link
     const frontendUrl = process.env.FRONTEND_URL || req.headers.origin || 'https://sanctiflow.vercel.app';
 
-    // Send the email
+    // 3. Dispatch emails (both the OTP email and the legacy token link email)
+    try {
+      await sendOtpEmail(user.email, user.name, otp, 15);
+      console.log(`[Auth] Secure OTP email sent to ${user.email}`);
+    } catch (emailErr) {
+      console.error(`[Auth] Failed to send OTP email:`, emailErr.message);
+    }
+
     try {
       await sendPasswordResetEmail(user.email, user.name, resetToken, frontendUrl);
-      console.log(`[Auth] Password reset email sent to ${user.email}`);
+      console.log(`[Auth] Backup password reset token link email sent to ${user.email}`);
     } catch (emailErr) {
-      console.error(`[Auth] Failed to send reset email:`, emailErr.message);
-      // Still return success to not reveal information, but log the error
+      console.error(`[Auth] Failed to send backup reset email:`, emailErr.message);
     }
 
     res.json({ message: successMessage });
@@ -166,7 +193,63 @@ export async function requestPasswordReset(req, res) {
   }
 }
 
-// ── Password Reset: Step 2 — Verify token is valid ────────────
+// ── Password Reset: Step 1b — Verify OTP code ───────────────────
+export async function verifyOtp(req, res) {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP code are required' });
+  }
+
+  try {
+    const otpData = db.findOtpByEmail(email);
+
+    if (!otpData) {
+      return res.status(400).json({ error: 'Invalid or expired OTP code' });
+    }
+
+    // Expiry check
+    if (new Date(otpData.expiresAt).getTime() < Date.now()) {
+      db.deleteOtp(email);
+      return res.status(400).json({ error: 'This OTP code has expired. Please request a new one.' });
+    }
+
+    // Attempts limit check
+    if (otpData.attempts >= 3) {
+      db.deleteOtp(email);
+      return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
+    }
+
+    // Validate the OTP
+    const hashed = crypto.createHash('sha256').update(otp.trim()).digest('hex');
+    if (hashed !== otpData.otpHash) {
+      const newAttempts = (otpData.attempts || 0) + 1;
+      db.updateOtpAttempts(email, newAttempts);
+
+      if (newAttempts >= 3) {
+        db.deleteOtp(email);
+        return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
+      }
+
+      return res.status(400).json({ error: `Incorrect OTP code. You have ${3 - newAttempts} attempt(s) remaining.` });
+    }
+
+    // Mark OTP as verified
+    const updatedOtp = {
+      ...otpData,
+      verified: true
+    };
+    db.createOtp(updatedOtp);
+
+    console.log(`[Auth] OTP verified successfully for ${email}`);
+    res.json({ success: true, message: 'OTP verified successfully.' });
+  } catch (err) {
+    console.error('OTP verification error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// ── Password Reset: Step 2 — Verify token is valid (Legacy) ────
 export async function verifyResetToken(req, res) {
   const { token } = req.params;
 
@@ -195,10 +278,10 @@ export async function verifyResetToken(req, res) {
 
 // ── Password Reset: Step 3 — Set new password ─────────────────
 export async function resetPassword(req, res) {
-  const { token, newPassword } = req.body;
+  const { token, email, otp, newPassword } = req.body;
 
-  if (!token || !newPassword) {
-    return res.status(400).json({ error: 'Token and new password are required' });
+  if (!newPassword) {
+    return res.status(400).json({ error: 'New password is required' });
   }
 
   if (newPassword.length < 6) {
@@ -206,30 +289,80 @@ export async function resetPassword(req, res) {
   }
 
   try {
-    const tokenData = db.findResetToken(token);
+    let userId = null;
+    let userEmail = null;
 
-    if (!tokenData) {
-      return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
-    }
+    // A. OTP-based reset verification path
+    if (email && otp) {
+      const otpData = db.findOtpByEmail(email);
 
-    if (tokenData.expiresAt < Date.now()) {
+      if (!otpData) {
+        return res.status(400).json({ error: 'Invalid or expired OTP code. Please request a new one.' });
+      }
+
+      // Check expiry
+      if (new Date(otpData.expiresAt).getTime() < Date.now()) {
+        db.deleteOtp(email);
+        return res.status(400).json({ error: 'This OTP code has expired. Please request a new one.' });
+      }
+
+      // Verify attempts limit
+      if (otpData.attempts >= 3) {
+        db.deleteOtp(email);
+        return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
+      }
+
+      // Validate the code
+      const hashed = crypto.createHash('sha256').update(otp.trim()).digest('hex');
+      if (hashed !== otpData.otpHash && !otpData.verified) {
+        const newAttempts = (otpData.attempts || 0) + 1;
+        db.updateOtpAttempts(email, newAttempts);
+
+        if (newAttempts >= 3) {
+          db.deleteOtp(email);
+          return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
+        }
+
+        return res.status(400).json({ error: `Incorrect OTP code. You have ${3 - newAttempts} attempt(s) remaining.` });
+      }
+
+      userId = otpData.userId;
+      userEmail = otpData.email;
+
+      // Invalidate the OTP (single-use)
+      db.deleteOtp(email);
+    } 
+    // B. Legacy Token-based reset path
+    else if (token) {
+      const tokenData = db.findResetToken(token);
+
+      if (!tokenData) {
+        return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+      }
+
+      if (tokenData.expiresAt < Date.now()) {
+        db.deleteResetToken(token);
+        return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
+      }
+
+      userId = tokenData.userId;
+      userEmail = tokenData.email;
+
+      // Invalidate token (single-use)
       db.deleteResetToken(token);
-      return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
+    } 
+    else {
+      return res.status(400).json({ error: 'Either a valid verification token or OTP and email details are required.' });
     }
 
-    // Hash the new password
+    // Hash and update the user's password
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
-
-    // Update the user's password
-    const updated = db.updateUserPassword(tokenData.userId, hashedPassword);
+    const updated = db.updateUserPassword(userId, hashedPassword);
     if (!updated) {
       return res.status(400).json({ error: 'User account not found' });
     }
 
-    // Delete the token (single-use)
-    db.deleteResetToken(token);
-
-    console.log(`[Auth] Password successfully reset for user ${tokenData.email}`);
+    console.log(`[Auth] Password successfully reset for user ${userEmail}`);
     res.json({ message: 'Password has been reset successfully. You can now log in with your new password.' });
   } catch (err) {
     console.error('Password reset error:', err);

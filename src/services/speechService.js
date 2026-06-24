@@ -114,7 +114,16 @@ class SpeechService {
 
     try {
       const constraints = {
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true
+        audio: deviceId ? {
+          deviceId: { exact: deviceId },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } : {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       };
 
       console.log('[SpeechService] Starting microphone stream monitoring:', constraints);
@@ -123,7 +132,13 @@ class SpeechService {
       } catch (firstErr) {
         if (deviceId) {
           console.warn('[SpeechService] getUserMedia with exact deviceId failed, falling back to default microphone:', firstErr.message);
-          this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
           this.selectedDeviceId = null;
         } else {
           throw firstErr;
@@ -136,7 +151,33 @@ class SpeechService {
       this.analyser.fftSize = 256;
       
       this.source = this.audioContext.createMediaStreamSource(this.stream);
-      this.source.connect(this.analyser);
+
+      // Acoustic enhancement / preprocessing graph for far-field capture (10+ meters)
+      // 1. Highpass filter to eliminate HVAC/low-frequency room rumble under 80Hz
+      this.highpassFilter = this.audioContext.createBiquadFilter();
+      this.highpassFilter.type = 'highpass';
+      this.highpassFilter.frequency.value = 80;
+
+      // 2. Dynamics compressor to act as auto-gain control, boosting quiet far-field vocals
+      this.compressor = this.audioContext.createDynamicsCompressor();
+      this.compressor.threshold.value = -24; // start compressing at -24dB
+      this.compressor.knee.value = 30;       // soft knee
+      this.compressor.ratio.value = 12;      // strong compression to boost quiet parts
+      this.compressor.attack.value = 0.003;  // fast attack (3ms)
+      this.compressor.release.value = 0.25;  // release (250ms)
+
+      // 3. Media stream destination for the preprocessed stream
+      this.destination = this.audioContext.createMediaStreamDestination();
+
+      // Connect nodes: source -> highpassFilter -> compressor -> destination
+      this.source.connect(this.highpassFilter);
+      this.highpassFilter.connect(this.compressor);
+      this.compressor.connect(this.destination);
+      
+      // Feed preprocessed stream into the analyser for visual level detection
+      this.compressor.connect(this.analyser);
+
+      this.processedStream = this.destination.stream;
 
       const bufferLength = this.analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
@@ -201,6 +242,10 @@ class SpeechService {
     }
     this.analyser = null;
     this.source = null;
+    this.highpassFilter = null;
+    this.compressor = null;
+    this.destination = null;
+    this.processedStream = null;
     const timestamp = new Date().toLocaleTimeString();
     console.log(`[SpeechService @ ${timestamp}] 🎤 MICROPHONE DISCONNECTED`);
     this.emit('mic-status', { status: 'disconnected', message: 'Microphone level monitoring inactive' });
@@ -369,7 +414,7 @@ class SpeechService {
     try {
       // Deepgram Streaming WebSocket endpoint
       // Using query parameters for API key authentication on connection setup
-      const url = `wss://api.deepgram.com/v1/listen?punctuate=true&interim_results=true&model=nova-2-general&language=en`;
+      const url = `wss://api.deepgram.com/v1/listen?smart_format=true&interim_results=true&model=nova-2-general&language=en&endpointing=500`;
       this.socket = new WebSocket(url, ['token', apiKey]);
 
       this.socket.onopen = () => {
@@ -387,7 +432,7 @@ class SpeechService {
             }
           }
 
-          this.mediaRecorder = new MediaRecorder(this.stream, options);
+          this.mediaRecorder = new MediaRecorder(this.processedStream || this.stream, options);
           this.mediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0 && this.socket && this.socket.readyState === WebSocket.OPEN) {
               this.socket.send(event.data);
