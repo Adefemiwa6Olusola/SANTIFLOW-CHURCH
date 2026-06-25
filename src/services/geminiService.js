@@ -1,6 +1,6 @@
 import { getAuthToken } from './authService';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://sanctiflow-backend.onrender.com/api' : 'http://localhost:3001/api');
 
 // Rolling context window (kept client-side just to mirror API signatures if needed, though backend manages it)
 const contextWindow = [];

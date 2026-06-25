@@ -2,7 +2,7 @@
 // Production-grade architecture calling our Node.js backend
 
 const STORAGE_KEY = 'sanctiflow_auth_session';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://sanctiflow-backend.onrender.com/api' : 'http://localhost:3001/api');
 
 function getSession() {
   try {
