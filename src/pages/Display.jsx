@@ -42,7 +42,7 @@ function reducer(state, action) {
 
 export default function Display() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const [lastUpdate, setLastUpdate] = useState(() => Date.now());
   const [showHint, setShowHint] = useState(true);
 
   // Auto-hide the hint after 4 seconds
