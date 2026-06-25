@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import useAuthStore from '../store/authStore';
@@ -6,16 +6,67 @@ import useAuthStore from '../store/authStore';
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
   const resetPassword = useAuthStore(s => s.resetPassword);
+  const resetPasswordSubmit = useAuthStore(s => s.resetPasswordSubmit);
   const isLoading = useAuthStore(s => s.isLoading);
   const error = useAuthStore(s => s.error);
   const clearError = useAuthStore(s => s.clearError);
+
+  useEffect(() => {
+    let timer;
+    if (resendCooldown > 0) {
+      timer = setInterval(() => {
+        setResendCooldown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       await resetPassword(email);
       setSent(true);
+      setResendCooldown(60);
+    } catch {
+      // Error handled by store
+    }
+  };
+
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      useAuthStore.setState({ error: 'Password must be at least 6 characters long' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      useAuthStore.setState({ error: 'Passwords do not match' });
+      return;
+    }
+    if (otp.length !== 6) {
+      useAuthStore.setState({ error: 'OTP must be exactly 6 digits' });
+      return;
+    }
+
+    try {
+      await resetPasswordSubmit({ email, otp, newPassword });
+      setResetSuccess(true);
+    } catch {
+      // Error handled by store
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      await resetPassword(email);
+      setResendCooldown(60);
     } catch {
       // Error handled by store
     }
@@ -45,10 +96,11 @@ export default function ForgotPassword() {
             transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.1 }}
           />
         </div>
-        <h1 className="auth-title" style={{ background: 'linear-gradient(135deg, #f5c842 0%, #e07b39 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block', width: '100%', textAlign: 'center' }}>Reset Password</h1>
+        <h1 className="auth-title" style={{ background: 'linear-gradient(135deg, #f5c842 0%, #e07b39 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block', width: '100%', textAlign: 'center' }}>
+          {resetSuccess ? 'Success' : 'Reset Password'}
+        </h1>
         <p className="auth-subtitle">
-
-          {sent ? 'Check your email for reset instructions.' : 'Enter your email to receive a reset link.'}
+          {resetSuccess ? 'Password reset completed' : sent ? 'Enter your 6-digit OTP code' : 'Enter your email to receive a reset link.'}
         </p>
 
         {error && (
@@ -69,14 +121,108 @@ export default function ForgotPassword() {
           </motion.div>
         )}
 
-        {sent ? (
+        {resetSuccess ? (
           <div style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-            <div style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>📧</div>
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-6)' }}>
-              If an account exists with <strong>{email}</strong>, you'll receive a password reset link.
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+              style={{ fontSize: '3.5rem', marginBottom: 'var(--space-4)' }}
+            >
+              ✅
+            </motion.div>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-6)', lineHeight: '1.6' }}>
+              Your password has been successfully updated. You can now log in to SanctiFlow.
             </p>
-            <Link to="/login" className="btn btn-primary">Back to Login</Link>
+            <Link to="/login" className="btn btn-primary w-full">Back to Login</Link>
           </div>
+        ) : sent ? (
+          <form className="auth-form" onSubmit={handleResetSubmit}>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)', textAlign: 'center', lineHeight: '1.5' }}>
+              We've sent a 6-digit OTP code to <strong>{email}</strong>. Enter it below along with your new password.
+            </p>
+            
+            <div className="form-group">
+              <label className="form-label" htmlFor="otp-code">6-Digit OTP Code</label>
+              <input
+                id="otp-code"
+                type="text"
+                maxLength={6}
+                pattern="\d{6}"
+                className="input-field"
+                placeholder="123456"
+                value={otp}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setOtp(val);
+                  clearError();
+                }}
+                style={{ 
+                  textAlign: 'center', 
+                  letterSpacing: '0.4em', 
+                  fontSize: '1.5rem', 
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold',
+                  color: 'var(--color-accent-gold)'
+                }}
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="new-password">New Password</label>
+              <input
+                id="new-password"
+                type="password"
+                className="input-field"
+                placeholder="Minimum 6 characters"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); clearError(); }}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="confirm-password">Confirm Password</label>
+              <input
+                id="confirm-password"
+                type="password"
+                className="input-field"
+                placeholder="Confirm your new password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); clearError(); }}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary btn-lg w-full"
+              disabled={isLoading}
+              style={{ marginTop: 'var(--space-3)' }}
+            >
+              {isLoading ? <span className="spinner" /> : 'Verify & Reset Password'}
+            </button>
+
+            <div style={{ textAlign: 'center', marginTop: 'var(--space-4)' }}>
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendCooldown > 0 || isLoading}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: resendCooldown > 0 ? 'var(--color-text-muted)' : 'var(--color-accent-gold)',
+                  cursor: resendCooldown > 0 ? 'default' : 'pointer',
+                  fontSize: 'var(--text-sm)',
+                  textDecoration: 'underline'
+                }}
+              >
+                {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend OTP Code'}
+              </button>
+            </div>
+          </form>
         ) : (
           <form className="auth-form" onSubmit={handleSubmit}>
             <div className="form-group">
@@ -98,7 +244,7 @@ export default function ForgotPassword() {
               disabled={isLoading}
               id="reset-submit-btn"
             >
-              {isLoading ? <span className="spinner" /> : 'Send Reset Link'}
+              {isLoading ? <span className="spinner" /> : 'Send Reset Link & OTP'}
             </button>
           </form>
         )}

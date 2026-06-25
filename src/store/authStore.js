@@ -48,6 +48,30 @@ const useAuthStore = create((set) => ({
       throw error;
     }
   },
+
+  verifyOtp: async (email, otp) => {
+    set({ isLoading: true, error: null });
+    try {
+      await authService.verifyOtp(email, otp);
+      set({ isLoading: false });
+      return true;
+    } catch (error) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  resetPasswordSubmit: async (params) => {
+    set({ isLoading: true, error: null });
+    try {
+      await authService.resetPasswordSubmit(params);
+      set({ isLoading: false });
+      return true;
+    } catch (error) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
 }));
 
 export default useAuthStore;

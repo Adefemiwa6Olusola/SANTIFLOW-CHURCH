@@ -137,14 +137,42 @@ export async function verifyResetToken(token) {
   }
 }
 
-export async function resetPasswordSubmit(token, newPassword) {
+export async function verifyOtp(email, otp) {
+  try {
+    const response = await fetch(`${API_BASE}/auth/verify-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, otp })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to verify OTP');
+    }
+    return true;
+  } catch (error) {
+    console.error('[AuthService] Verify OTP failed:', error.message);
+    throw error;
+  }
+}
+
+export async function resetPasswordSubmit(param1, param2) {
+  let body = {};
+  if (param1 && typeof param1 === 'object') {
+    body = param1;
+  } else {
+    body = { token: param1, newPassword: param2 };
+  }
+  
   try {
     const response = await fetch(`${API_BASE}/auth/reset-password`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ token, newPassword })
+      body: JSON.stringify(body)
     });
     
     const data = await response.json();
