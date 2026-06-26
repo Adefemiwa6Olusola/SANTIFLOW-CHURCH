@@ -817,5 +817,22 @@ export function detectLocal(text) {
     }
   }
 
+  // 4. Voice command to project a specific verse when explicit command keywords are detected
+  const hasDisplayKeyword = /\b(show|project|display)\b/i.test(cleanText);
+  if (hasDisplayKeyword && result.references.length > 0) {
+    const ref = result.references[0];
+    result.commands.push({
+      action: 'project_specific_verse',
+      params: {
+        book: ref.book,
+        chapter: ref.chapter,
+        verseStart: ref.verseStart,
+        verseEnd: ref.verseEnd
+      },
+      matchedText: cleanText
+    });
+    result.skipGemini = true;
+  }
+
   return result;
 }

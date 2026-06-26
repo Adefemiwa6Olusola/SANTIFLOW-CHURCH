@@ -166,16 +166,21 @@ class SpeechService {
       this.compressor.attack.value = 0.003;  // fast attack (3ms)
       this.compressor.release.value = 0.25;  // release (250ms)
 
-      // 3. Media stream destination for the preprocessed stream
+      // 3. GainNode for adaptive digital gain normalization
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = 2.0; // start with a 2x sensitivity boost
+
+      // 4. Media stream destination for the preprocessed stream
       this.destination = this.audioContext.createMediaStreamDestination();
 
-      // Connect nodes: source -> highpassFilter -> compressor -> destination
+      // Connect nodes: source -> highpassFilter -> compressor -> gainNode -> destination
       this.source.connect(this.highpassFilter);
       this.highpassFilter.connect(this.compressor);
-      this.compressor.connect(this.destination);
+      this.compressor.connect(this.gainNode);
+      this.gainNode.connect(this.destination);
       
       // Feed preprocessed stream into the analyser for visual level detection
-      this.compressor.connect(this.analyser);
+      this.gainNode.connect(this.analyser);
 
       this.processedStream = this.destination.stream;
 
@@ -195,6 +200,20 @@ class SpeechService {
         }
         const average = total / bufferLength;
         const normalizedVolume = Math.min(average / 128, 1);
+
+        // Adaptive normalization: adjust gain dynamically based on average voice power
+        if (this.audioContext && this.gainNode) {
+          let targetGain = 2.0;
+          if (average > 0 && average < 20) {
+            targetGain = 3.5; // 3.5x gain boost for very quiet/distant speech
+          } else if (average >= 20 && average < 55) {
+            targetGain = 2.0; // 2x gain boost for medium/normal speaking
+          } else if (average > 100) {
+            targetGain = 0.5; // lower gain for loud/close shouting to prevent distortion
+          }
+          // Smooth gain adjustment over 100ms
+          this.gainNode.gain.setTargetAtTime(targetGain, this.audioContext.currentTime, 0.1);
+        }
 
         this.emit('audio-level', { level: normalizedVolume });
 
@@ -244,6 +263,7 @@ class SpeechService {
     this.source = null;
     this.highpassFilter = null;
     this.compressor = null;
+    this.gainNode = null;
     this.destination = null;
     this.processedStream = null;
     const timestamp = new Date().toLocaleTimeString();
@@ -305,7 +325,16 @@ class SpeechService {
       let newFinal = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
+        const alternative = event.results[i][0];
+        const transcript = alternative.transcript;
+        const confidence = alternative.confidence || 0;
+
+        // Skip low confidence text to reduce transcription errors
+        if (confidence > 0 && confidence < 0.45) {
+          console.log(`[SpeechService] Skipped low-confidence native transcript (${confidence}): "${transcript}"`);
+          continue;
+        }
+
         if (event.results[i].isFinal) {
           newFinal += transcript + ' ';
         } else {
@@ -412,9 +441,8 @@ class SpeechService {
     }
 
     try {
-      // Deepgram Streaming WebSocket endpoint
-      // Using query parameters for API key authentication on connection setup
-      const url = `wss://api.deepgram.com/v1/listen?smart_format=true&interim_results=true&model=nova-2-general&language=en&endpointing=500`;
+      // Deepgram Streaming WebSocket endpoint (reduced endpointing for faster turnaround)
+      const url = `wss://api.deepgram.com/v1/listen?smart_format=true&interim_results=true&model=nova-2-general&language=en&endpointing=300`;
       this.socket = new WebSocket(url, ['token', apiKey]);
 
       this.socket.onopen = () => {
@@ -439,8 +467,8 @@ class SpeechService {
             }
           };
 
-          // Stream audio in 200ms slices for fast latency response
-          this.mediaRecorder.start(200);
+          // Stream audio in 100ms slices (reduced from 200ms) for faster transcription updates
+          this.mediaRecorder.start(100);
           console.log('[SpeechService] MediaRecorder streaming started');
         } catch (mediaErr) {
           console.error('[SpeechService] MediaRecorder start failed:', mediaErr);
@@ -456,6 +484,12 @@ class SpeechService {
             const transcript = data.channel.alternatives[0].transcript;
             const isFinal = data.is_final;
             const confidence = data.channel.alternatives[0].confidence;
+
+            // Skip low confidence text to reduce transcription errors
+            if (confidence > 0 && confidence < 0.45) {
+              console.log(`[SpeechService] Skipped low-confidence Deepgram transcript (${confidence}): "${transcript}"`);
+              return;
+            }
 
             if (transcript) {
               if (isFinal) {

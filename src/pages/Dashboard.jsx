@@ -310,6 +310,22 @@ export default function Dashboard() {
         }
         break;
       }
+      case 'project_specific_verse': {
+        const { book, chapter, verseStart, verseEnd } = cmd.params || {};
+        if (book && chapter && verseStart) {
+          try {
+            const verseData = await fetchVerse(activeTranslation, book, chapter, verseStart, verseEnd || verseStart);
+            await projectVerse({ ...verseData, detectedBy: 'voice_command' });
+            addCommandLog({
+              action: 'voice_projected',
+              message: `Voice command projected: ${verseData.reference}`
+            });
+          } catch (e) {
+            addCommandLog({ action: 'fetch_error', message: `Voice command failed to load ${book} ${chapter}:${verseStart}` });
+          }
+        }
+        break;
+      }
     }
   };
 
