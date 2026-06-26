@@ -11,6 +11,7 @@ import { fetchVerse, preloadAdjacent } from '../services/bibleService';
 import { verseNavigator } from '../services/verseNavigator';
 import { addToHistory, getHistory, getQueue } from '../services/dbService';
 import speechService from '../services/speechService';
+import { detectLocal } from '../../server/src/services/localDetectionService';
 
 // Feature panels
 import VoicePanel from '../features/voice/VoicePanel';
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const aiStatus                = useAppStore(s => s.aiStatus);
   const setAiStatus             = useAppStore(s => s.setAiStatus);
   const transcriptBuffer        = useAppStore(s => s.transcriptBuffer);
+  const interimText             = useAppStore(s => s.interimText);
   const clearBuffer             = useAppStore(s => s.clearBuffer);
   const transcriptEntries       = useAppStore(s => s.transcriptEntries);
   const addDetectedScripture    = useAppStore(s => s.addDetectedScripture);
@@ -76,6 +78,8 @@ export default function Dashboard() {
   const [quotaWarning, setQuotaWarning]     = useState(false);
   const [generatingNotes, setGeneratingNotes] = useState(false);
   const [connectedScreens, setConnectedScreens] = useState(0);
+  const lastProjectedRef        = useRef(null);
+  const lastExecutedCommandRef  = useRef(null);
 
   // ── Init on mount ────────────────────────────────────────────
   useEffect(() => {
@@ -255,9 +259,59 @@ export default function Dashboard() {
     return () => clearTimeout(handler);
   }, [transcriptBuffer, clearBuffer, autoMode, activeTranslation, isLive, projectVerse]);
 
-  // ── Real-time Interim Transcript Processing REMOVED ──────────
-  // Interim processing caused double API calls and race conditions.
-  // The main buffer processor at 100ms is fast enough for live use.
+  // ── Real-time Interim Transcript Local Processing ────────────
+  // Runs citation detection and commands on interim (partial) transcripts
+  // locally (sub-second response) as the user speaks.
+  useEffect(() => {
+    const text = interimText?.trim();
+    if (!text || text.length < 5) return;
+
+    const runLocalInterim = async () => {
+      const { references, commands } = detectLocal(text);
+
+      // 1. If a scripture reference is found, project it immediately if autoMode is active
+      if (references.length > 0 && autoMode) {
+        const ref = references[0];
+        const refKey = `${ref.book}-${ref.chapter}-${ref.verseStart}`;
+        
+        if (lastProjectedRef.current !== refKey) {
+          lastProjectedRef.current = refKey;
+          // Cooldown window of 5 seconds to prevent double-projection of the same verse
+          setTimeout(() => {
+            if (lastProjectedRef.current === refKey) {
+              lastProjectedRef.current = null;
+            }
+          }, 5000);
+
+          try {
+            const verseData = await fetchVerse(activeTranslation, ref.book, ref.chapter, ref.verseStart, ref.verseEnd);
+            await projectVerse({ ...verseData, detectedBy: 'ai', confidence: ref.confidence });
+          } catch {}
+        }
+      }
+
+      // 2. If a voice command is found, execute it immediately (if enabled)
+      const voiceCommandsEnabled = useAppStore.getState().voiceCommandsEnabled;
+      if (voiceCommandsEnabled && commands.length > 0) {
+        for (const cmd of commands) {
+          const cmdKey = `${cmd.action}-${cmd.matchedText}`;
+          if (lastExecutedCommandRef.current === cmdKey) continue;
+
+          lastExecutedCommandRef.current = cmdKey;
+          // Cooldown window of 3 seconds to prevent double-triggering the same command
+          setTimeout(() => {
+            if (lastExecutedCommandRef.current === cmdKey) {
+              lastExecutedCommandRef.current = null;
+            }
+          }, 3000);
+
+          await handleVoiceCommand(cmd);
+        }
+      }
+    };
+
+    runLocalInterim();
+  }, [interimText, autoMode, activeTranslation, projectVerse, handleVoiceCommand]);
 
   // ── Voice Command Handler ─────────────────────────────────────
   const handleVoiceCommand = async (cmd) => {

@@ -40,10 +40,12 @@ class SpeechService {
     this.deepgramApiKey = null;
     this.socket = null;
     this.mediaRecorder = null;
+    this.silenceTimeout = null;
   }
 
   teardownSpeechRecognition() {
     clearTimeout(this.restartTimeout);
+    clearTimeout(this.silenceTimeout);
     
     // Close Deepgram WebSocket connection
     if (this.socket) {
@@ -360,6 +362,18 @@ class SpeechService {
           text: interimTranscript,
           isFinal: false,
         });
+
+        // Silence-based auto-finalization restart for native SpeechRecognition:
+        // If the speaker pauses for 1.5 seconds, stop the engine to force immediate finalization and restart.
+        clearTimeout(this.silenceTimeout);
+        this.silenceTimeout = setTimeout(() => {
+          if (this.isListening && !this.isPaused && this.recognition) {
+            console.log('[SpeechService] Silence detected in interim speech. Restarting engine to finalize transcript...');
+            try {
+              this.recognition.stop();
+            } catch (e) {}
+          }
+        }, 1500);
       }
     };
 
