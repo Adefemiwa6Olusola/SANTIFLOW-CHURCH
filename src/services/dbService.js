@@ -1,7 +1,7 @@
 import { get, set, update } from 'idb-keyval';
 import { getAuthToken } from './authService';
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://sanctiflow-backend.onrender.com/api' : 'http://localhost:3001/api');
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://olusotem-sanctiflow-backend.hf.space/api' : 'http://localhost:3001/api');
 const DB_KEYS = {
   BIBLE_CACHE: 'sanctiflow_bible_cache'
 };
@@ -36,7 +36,8 @@ async function secureFetch(url, options = {}) {
 // ─────────────────────────────────────────────────
 export async function getHistory() {
   try {
-    return await secureFetch(`${API_BASE}/history`);
+    const data = await secureFetch(`${API_BASE}/history`);
+    return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error('[dbService] getHistory failed:', err.message);
     return [];
@@ -71,7 +72,8 @@ export async function clearHistory() {
 // ─────────────────────────────────────────────────
 export async function getQueue() {
   try {
-    return await secureFetch(`${API_BASE}/queue`);
+    const data = await secureFetch(`${API_BASE}/queue`);
+    return Array.isArray(data) ? data : [];
   } catch (err) {
     console.error('[dbService] getQueue failed:', err.message);
     return [];
