@@ -143,6 +143,78 @@ export default function Dashboard() {
     addToast({ type: 'success', message: `📖 ${verseData.reference} (${verseData.translation})` });
   }, [isLive, incrementProjected]);
 
+  // ── Voice Command Handler ─────────────────────────────────────
+  const handleVoiceCommand = useCallback(async (cmd) => {
+    switch (cmd.action) {
+      case 'next_verse': {
+        const v = await verseNavigator.nextVerse();
+        if (v) await projectVerse(v);
+        else addToast({ type: 'info', message: 'End of chapter reached' });
+        break;
+      }
+      case 'prev_verse': {
+        const v = await verseNavigator.prevVerse();
+        if (v) await projectVerse(v);
+        break;
+      }
+      case 'next_chapter': {
+        const v = await verseNavigator.nextChapter();
+        if (v) await projectVerse(v);
+        break;
+      }
+      case 'prev_chapter': {
+        const v = await verseNavigator.prevChapter();
+        if (v) await projectVerse(v);
+        break;
+      }
+      case 'clear_screen': {
+        clearCurrentVerse();
+        syncService.sendClear();
+        addToast({ type: 'info', message: 'Screen cleared' });
+        break;
+      }
+      case 'repeat_verse': {
+        const v = await verseNavigator.repeatVerse();
+        if (v) await projectVerse(v);
+        break;
+      }
+      case 'switch_translation': {
+        const t = cmd.params?.translation?.toUpperCase();
+        if (t) {
+          setActiveTranslation(t);
+          syncService.sendTranslation(t);
+          if (verseNavigator.hasPosition()) {
+            const pos = verseNavigator.getPosition();
+            try {
+              const v = await fetchVerse(t, pos.book, pos.chapter, pos.verseStart, pos.verseEnd);
+              await projectVerse(v);
+            } catch {}
+          }
+          addToast({ type: 'info', message: `Translation → ${t}` });
+        }
+        break;
+      }
+      case 'project_specific_verse': {
+        const { book, chapter, verseStart, verseEnd } = cmd.params || {};
+        if (book && chapter && verseStart) {
+          try {
+            const verseData = await fetchVerse(activeTranslation, book, chapter, verseStart, verseEnd || verseStart);
+            await projectVerse({ ...verseData, detectedBy: 'voice_command' });
+            addCommandLog({
+              action: 'voice_projected',
+              message: `Voice command projected: ${verseData.reference}`
+            });
+          } catch (e) {
+            addCommandLog({ action: 'fetch_error', message: `Voice command failed to load ${book} ${chapter}:${verseStart}` });
+          }
+        }
+        break;
+      }
+      default:
+        console.warn(`[Dashboard] Unknown voice command action: ${cmd.action}`);
+    }
+  }, [projectVerse, clearCurrentVerse, setActiveTranslation, activeTranslation, addCommandLog, addToast]);
+
   // Ref to track last checked interim text to prevent duplicate requests
   const lastCheckedInterimRef = useRef('');
 
@@ -312,76 +384,6 @@ export default function Dashboard() {
 
     runLocalInterim();
   }, [interimText, autoMode, activeTranslation, projectVerse, handleVoiceCommand]);
-
-  // ── Voice Command Handler ─────────────────────────────────────
-  const handleVoiceCommand = async (cmd) => {
-    switch (cmd.action) {
-      case 'next_verse': {
-        const v = await verseNavigator.nextVerse();
-        if (v) await projectVerse(v);
-        else addToast({ type: 'info', message: 'End of chapter reached' });
-        break;
-      }
-      case 'prev_verse': {
-        const v = await verseNavigator.prevVerse();
-        if (v) await projectVerse(v);
-        break;
-      }
-      case 'next_chapter': {
-        const v = await verseNavigator.nextChapter();
-        if (v) await projectVerse(v);
-        break;
-      }
-      case 'prev_chapter': {
-        const v = await verseNavigator.prevChapter();
-        if (v) await projectVerse(v);
-        break;
-      }
-      case 'clear_screen': {
-        clearCurrentVerse();
-        syncService.sendClear();
-        addToast({ type: 'info', message: 'Screen cleared' });
-        break;
-      }
-      case 'repeat_verse': {
-        const v = await verseNavigator.repeatVerse();
-        if (v) await projectVerse(v);
-        break;
-      }
-      case 'switch_translation': {
-        const t = cmd.params?.translation?.toUpperCase();
-        if (t) {
-          setActiveTranslation(t);
-          syncService.sendTranslation(t);
-          if (verseNavigator.hasPosition()) {
-            const pos = verseNavigator.getPosition();
-            try {
-              const v = await fetchVerse(t, pos.book, pos.chapter, pos.verseStart, pos.verseEnd);
-              await projectVerse(v);
-            } catch {}
-          }
-          addToast({ type: 'info', message: `Translation → ${t}` });
-        }
-        break;
-      }
-      case 'project_specific_verse': {
-        const { book, chapter, verseStart, verseEnd } = cmd.params || {};
-        if (book && chapter && verseStart) {
-          try {
-            const verseData = await fetchVerse(activeTranslation, book, chapter, verseStart, verseEnd || verseStart);
-            await projectVerse({ ...verseData, detectedBy: 'voice_command' });
-            addCommandLog({
-              action: 'voice_projected',
-              message: `Voice command projected: ${verseData.reference}`
-            });
-          } catch (e) {
-            addCommandLog({ action: 'fetch_error', message: `Voice command failed to load ${book} ${chapter}:${verseStart}` });
-          }
-        }
-        break;
-      }
-    }
-  };
 
   // ── Expose nav to child components via window.__sf ────────────
   useEffect(() => {
