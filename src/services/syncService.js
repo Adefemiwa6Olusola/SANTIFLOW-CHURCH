@@ -23,7 +23,7 @@ class SyncService {
       this.socket.disconnect();
     }
 
-    const wsUrl = import.meta.env.VITE_WS_URL || (import.meta.env.PROD ? 'https://olusotem-sanctiflow-backend.hf.space' : 'http://localhost:3001');
+    const wsUrl = import.meta.env.PROD ? 'https://santiflow-church.onrender.com' : 'http://localhost:3001';
     const token = getAuthToken();
     const currentUser = getCurrentUser();
 
