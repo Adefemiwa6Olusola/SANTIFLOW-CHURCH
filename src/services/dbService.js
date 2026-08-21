@@ -1,7 +1,7 @@
 import { get, set, update } from 'idb-keyval';
 import { getAuthToken } from './authService';
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://olusotem-sanctiflow-backend.hf.space/api' : 'http://localhost:3001/api');
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://santiflow-church.onrender.com/api' : 'http://localhost:3001/api');
 const DB_KEYS = {
   BIBLE_CACHE: 'sanctiflow_bible_cache'
 };

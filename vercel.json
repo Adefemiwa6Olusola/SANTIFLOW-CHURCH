@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://olusotem-sanctiflow-backend.hf.space/api/$1"
+      "destination": "https://santiflow-church.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",
