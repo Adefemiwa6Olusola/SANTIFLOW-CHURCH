@@ -4,6 +4,18 @@
 const STORAGE_KEY = 'sanctiflow_auth_session';
 const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://olusotem-sanctiflow-backend.hf.space/api' : 'http://localhost:3001/api');
 
+async function parseResponse(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    if (text.includes('Your space') || text.includes('hf.co') || text.includes('sleeping')) {
+      throw new Error('Backend server is currently offline or sleeping. Please restart your Hugging Face space.');
+    }
+    throw new Error('Received an invalid response from the backend server.');
+  }
+}
+
 function getSession() {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
@@ -43,7 +55,7 @@ export async function login(email, password) {
       body: JSON.stringify({ email, password })
     });
     
-    const data = await response.json();
+    const data = await parseResponse(response);
     
     if (!response.ok) {
       throw new Error(data.error || 'Invalid email or password');
@@ -73,7 +85,7 @@ export async function signup({ email, password, name, churchName, role = 'operat
       body: JSON.stringify({ email, password, name, churchName, role })
     });
     
-    const data = await response.json();
+    const data = await parseResponse(response);
     
     if (!response.ok) {
       throw new Error(data.error || 'Signup failed');
@@ -112,7 +124,7 @@ export async function resetPassword(email) {
       body: JSON.stringify({ email })
     });
     
-    const data = await response.json();
+    const data = await parseResponse(response);
     if (!response.ok) {
       throw new Error(data.error || 'Failed to request password reset');
     }
@@ -126,7 +138,7 @@ export async function resetPassword(email) {
 export async function verifyResetToken(token) {
   try {
     const response = await fetch(`${API_BASE}/auth/reset-password/${token}`);
-    const data = await response.json();
+    const data = await parseResponse(response);
     if (!response.ok) {
       throw new Error(data.error || 'Invalid or expired reset link');
     }
@@ -147,7 +159,7 @@ export async function verifyOtp(email, otp) {
       body: JSON.stringify({ email, otp })
     });
     
-    const data = await response.json();
+    const data = await parseResponse(response);
     if (!response.ok) {
       throw new Error(data.error || 'Failed to verify OTP');
     }
@@ -175,7 +187,7 @@ export async function resetPasswordSubmit(param1, param2) {
       body: JSON.stringify(body)
     });
     
-    const data = await response.json();
+    const data = await parseResponse(response);
     if (!response.ok) {
       throw new Error(data.error || 'Failed to reset password');
     }

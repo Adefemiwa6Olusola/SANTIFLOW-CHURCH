@@ -24,11 +24,28 @@ async function secureFetch(url, options = {}) {
   });
   
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+    const text = await response.text().catch(() => '');
+    if (text.includes('Your space') || text.includes('hf.co') || text.includes('sleeping')) {
+      throw new Error('Backend server is currently offline or sleeping. Please restart your Hugging Face space.');
+    }
+    let errorData = {};
+    try {
+      errorData = JSON.parse(text);
+    } catch (e) {
+      // Ignored
+    }
     throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
   }
   
-  return response.json();
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    if (text.includes('Your space') || text.includes('hf.co') || text.includes('sleeping')) {
+      throw new Error('Backend server is currently offline or sleeping. Please restart your Hugging Face space.');
+    }
+    throw new Error('Received an invalid response from the backend server.');
+  }
 }
 
 // ─────────────────────────────────────────────────
