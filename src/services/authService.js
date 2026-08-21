@@ -9,8 +9,8 @@ async function parseResponse(response) {
   try {
     return JSON.parse(text);
   } catch (err) {
-    if (text.includes('Your space') || text.includes('hf.co') || text.includes('sleeping')) {
-      throw new Error('Backend server is currently offline or sleeping. Please restart your Hugging Face space.');
+    if (text.includes('Your space') || text.includes('hf.co') || text.includes('sleeping') || text.includes('<html')) {
+      throw new Error('The backend server is waking up or temporarily unavailable. Please wait 30 seconds and try again.');
     }
     throw new Error('Received an invalid response from the backend server.');
   }
