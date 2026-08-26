@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Eye, EyeOff } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const login = useAuthStore(s => s.login);
   const isLoading = useAuthStore(s => s.isLoading);
   const error = useAuthStore(s => s.error);
@@ -86,15 +88,37 @@ export default function Login() {
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              className="input-field"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); clearError(); }}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                id="login-password"
+                type={showPassword ? 'text' : 'password'}
+                className="input-field"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); clearError(); }}
+                required
+                style={{ paddingRight: '40px' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: 0
+                }}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <Link to="/forgot-password" style={{ fontSize: 'var(--text-sm)', color: 'var(--color-accent-gold)' }}>
