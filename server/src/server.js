@@ -61,48 +61,48 @@ app.post('/api/ai/notes', requireAuth, aiLimiter, aiController.getNotes);
 app.post('/api/ai/reset', requireAuth, aiController.resetAiContext);
 
 // Queue endpoints (sync state persistent on server)
-app.get('/api/queue', (req, res) => {
-  res.json(db.getQueue());
+app.get('/api/queue', async (req, res) => {
+  res.json(await db.());
 });
 
 app.post('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
   const { verseData } = req.body;
   if (!verseData) return res.status(400).json({ error: 'verseData is required' });
-  const entry = db.addToQueue(verseData);
+  const entry = await db.(verseData);
   res.status(201).json(entry);
 });
 
 app.put('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
   const { queueList } = req.body;
   if (!Array.isArray(queueList)) return res.status(400).json({ error: 'queueList must be an array' });
-  const updated = db.updateQueue(queueList);
+  const updated = await db.(queueList);
   res.json(updated);
 });
 
 app.delete('/api/queue/:id', requireAuth, requireRole('operator'), (req, res) => {
-  db.removeFromQueue(parseInt(req.params.id));
+  await db.(parseInt(req.params.id));
   res.json({ success: true });
 });
 
 app.delete('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
-  db.clearQueue();
+  await db.();
   res.json({ success: true });
 });
 
 // History endpoints
-app.get('/api/history', (req, res) => {
-  res.json(db.getHistory());
+app.get('/api/history', async (req, res) => {
+  res.json(await db.());
 });
 
 app.post('/api/history', requireAuth, requireRole('operator'), (req, res) => {
   const { verseData, type } = req.body;
   if (!verseData) return res.status(400).json({ error: 'verseData is required' });
-  const entry = db.addToHistory(verseData, type);
+  const entry = await db.(verseData, type);
   res.status(201).json(entry);
 });
 
 app.delete('/api/history', requireAuth, requireRole('operator'), (req, res) => {
-  db.clearHistory();
+  await db.();
   res.json({ success: true });
 });
 
@@ -149,7 +149,7 @@ let currentDisplayState = {
   theme: 'worship'
 };
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const user = socket.user;
   // If authenticated, join a room specific to their church to isolate traffic.
   // Otherwise check if a churchName was passed in the query/auth (for displays/viewers)
@@ -166,8 +166,8 @@ io.on('connection', (socket) => {
   socket.emit('SYNC_STATE', currentDisplayState);
   
   // Send active queue & history too
-  socket.emit('SYNC_QUEUE', db.getQueue());
-  socket.emit('SYNC_HISTORY', db.getHistory());
+  socket.emit('SYNC_QUEUE', await db.());
+  socket.emit('SYNC_HISTORY', await db.());
 
   // Listen for control events
   const handleControlEvent = (event, payload) => {
@@ -185,8 +185,8 @@ io.on('connection', (socket) => {
       currentDisplayState.activeVerse = payload;
       // Automatically save to history on project
       if (payload) {
-        db.addToHistory(payload, 'MANUAL');
-        io.to(churchRoom).emit('SYNC_HISTORY', db.getHistory());
+        await db.(payload, 'MANUAL');
+        io.to(churchRoom).emit('SYNC_HISTORY', await db.());
       }
     } else if (event === 'CLEAR_SCREEN') {
       currentDisplayState.activeVerse = null;

@@ -15,7 +15,7 @@ export async function login(req, res) {
   }
 
   try {
-    const user = db.findUserByEmail(email);
+    const user = await db.(email);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -55,7 +55,7 @@ export async function signup(req, res) {
   }
 
   try {
-    const existingUser = db.findUserByEmail(email);
+    const existingUser = await db.(email);
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -63,10 +63,10 @@ export async function signup(req, res) {
     const hashedPassword = bcrypt.hashSync(password, 10);
     
     // First user is automatically admin, others operator
-    const usersCount = db.getUsers().length;
+    const usersCount = await db.().length;
     const assignedRole = usersCount === 0 ? 'admin' : (role || 'operator');
 
-    const newUser = db.createUser({
+    const newUser = await db.({
       email,
       password: hashedPassword,
       name,
@@ -98,7 +98,7 @@ export async function signup(req, res) {
 
 export async function getCurrentUser(req, res) {
   try {
-    const user = db.findUserById(req.user.id);
+    const user = await db.(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -128,7 +128,7 @@ export async function requestPasswordReset(req, res) {
     // This prevents email enumeration attacks
     const successMessage = 'If an account exists with that email, a verification code has been sent.';
 
-    const user = db.findUserByEmail(email);
+    const user = await db.(email);
     if (!user) {
       // Don't reveal that the user doesn't exist
       console.log(`[Auth] Password reset requested for non-existent email: ${email}`);
@@ -140,7 +140,7 @@ export async function requestPasswordReset(req, res) {
     const otpExpiry = Date.now() + 15 * 60 * 1000; // 15 minutes
 
     // Anti-spam cooldown check (60 seconds)
-    const existingOtp = db.findOtpByEmail(email);
+    const existingOtp = await db.(email);
     if (existingOtp && Date.now() - new Date(existingOtp.createdAt).getTime() < 60 * 1000) {
       return res.status(429).json({ error: 'Please wait 60 seconds before requesting another code.' });
     }
@@ -149,7 +149,7 @@ export async function requestPasswordReset(req, res) {
     const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
 
     // Save the OTP to DB
-    db.createOtp({
+    await db.({
       email: user.email,
       userId: user.id,
       otpHash,
@@ -162,7 +162,7 @@ export async function requestPasswordReset(req, res) {
     const resetToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiry = Date.now() + RESET_TOKEN_EXPIRY_MS;
 
-    db.createResetToken({
+    await db.({
       token: resetToken,
       userId: user.id,
       email: user.email,
@@ -202,7 +202,7 @@ export async function verifyOtp(req, res) {
   }
 
   try {
-    const otpData = db.findOtpByEmail(email);
+    const otpData = await db.(email);
 
     if (!otpData) {
       return res.status(400).json({ error: 'Invalid or expired OTP code' });
@@ -210,13 +210,13 @@ export async function verifyOtp(req, res) {
 
     // Expiry check
     if (new Date(otpData.expiresAt).getTime() < Date.now()) {
-      db.deleteOtp(email);
+      await db.(email);
       return res.status(400).json({ error: 'This OTP code has expired. Please request a new one.' });
     }
 
     // Attempts limit check
     if (otpData.attempts >= 3) {
-      db.deleteOtp(email);
+      await db.(email);
       return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
     }
 
@@ -224,10 +224,10 @@ export async function verifyOtp(req, res) {
     const hashed = crypto.createHash('sha256').update(otp.trim()).digest('hex');
     if (hashed !== otpData.otpHash) {
       const newAttempts = (otpData.attempts || 0) + 1;
-      db.updateOtpAttempts(email, newAttempts);
+      await db.(email, newAttempts);
 
       if (newAttempts >= 3) {
-        db.deleteOtp(email);
+        await db.(email);
         return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
       }
 
@@ -239,7 +239,7 @@ export async function verifyOtp(req, res) {
       ...otpData,
       verified: true
     };
-    db.createOtp(updatedOtp);
+    await db.(updatedOtp);
 
     console.log(`[Auth] OTP verified successfully for ${email}`);
     res.json({ success: true, message: 'OTP verified successfully.' });
@@ -258,14 +258,14 @@ export async function verifyResetToken(req, res) {
   }
 
   try {
-    const tokenData = db.findResetToken(token);
+    const tokenData = await db.(token);
 
     if (!tokenData) {
       return res.status(400).json({ error: 'Invalid or expired reset link', valid: false });
     }
 
     if (tokenData.expiresAt < Date.now()) {
-      db.deleteResetToken(token);
+      await db.(token);
       return res.status(400).json({ error: 'This reset link has expired. Please request a new one.', valid: false });
     }
 
@@ -294,7 +294,7 @@ export async function resetPassword(req, res) {
 
     // A. OTP-based reset verification path
     if (email && otp) {
-      const otpData = db.findOtpByEmail(email);
+      const otpData = await db.(email);
 
       if (!otpData) {
         return res.status(400).json({ error: 'Invalid or expired OTP code. Please request a new one.' });
@@ -302,13 +302,13 @@ export async function resetPassword(req, res) {
 
       // Check expiry
       if (new Date(otpData.expiresAt).getTime() < Date.now()) {
-        db.deleteOtp(email);
+        await db.(email);
         return res.status(400).json({ error: 'This OTP code has expired. Please request a new one.' });
       }
 
       // Verify attempts limit
       if (otpData.attempts >= 3) {
-        db.deleteOtp(email);
+        await db.(email);
         return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
       }
 
@@ -316,10 +316,10 @@ export async function resetPassword(req, res) {
       const hashed = crypto.createHash('sha256').update(otp.trim()).digest('hex');
       if (hashed !== otpData.otpHash && !otpData.verified) {
         const newAttempts = (otpData.attempts || 0) + 1;
-        db.updateOtpAttempts(email, newAttempts);
+        await db.(email, newAttempts);
 
         if (newAttempts >= 3) {
-          db.deleteOtp(email);
+          await db.(email);
           return res.status(400).json({ error: 'Too many incorrect attempts. This OTP code has been invalidated. Please request a new one.' });
         }
 
@@ -330,18 +330,18 @@ export async function resetPassword(req, res) {
       userEmail = otpData.email;
 
       // Invalidate the OTP (single-use)
-      db.deleteOtp(email);
+      await db.(email);
     } 
     // B. Legacy Token-based reset path
     else if (token) {
-      const tokenData = db.findResetToken(token);
+      const tokenData = await db.(token);
 
       if (!tokenData) {
         return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
       }
 
       if (tokenData.expiresAt < Date.now()) {
-        db.deleteResetToken(token);
+        await db.(token);
         return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
       }
 
@@ -349,7 +349,7 @@ export async function resetPassword(req, res) {
       userEmail = tokenData.email;
 
       // Invalidate token (single-use)
-      db.deleteResetToken(token);
+      await db.(token);
     } 
     else {
       return res.status(400).json({ error: 'Either a valid verification token or OTP and email details are required.' });
@@ -357,7 +357,7 @@ export async function resetPassword(req, res) {
 
     // Hash and update the user's password
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
-    const updated = db.updateUserPassword(userId, hashedPassword);
+    const updated = await db.(userId, hashedPassword);
     if (!updated) {
       return res.status(400).json({ error: 'User account not found' });
     }
