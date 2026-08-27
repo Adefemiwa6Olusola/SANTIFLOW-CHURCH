@@ -107,8 +107,14 @@ app.delete('/api/history', requireAuth, requireRole('operator'), async (req, res
 });
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  const mongoose = (await import('mongoose')).default;
+  const dbState = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  res.json({ 
+    status: 'ok', 
+    time: new Date().toISOString(),
+    database: dbState[mongoose.connection.readyState] || 'unknown'
+  });
 });
 
 // ─────────────────────────────────────────────────

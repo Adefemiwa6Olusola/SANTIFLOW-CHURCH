@@ -6,14 +6,31 @@ if (!MONGODB_URI) {
   console.error('MONGODB_URI environment variable is missing.');
 }
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI || '', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => {
-  console.log('Connected to MongoDB Cloud');
-}).catch(err => {
-  console.error('MongoDB connection error:', err);
+// Connect to MongoDB with retry logic
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
+    console.log('✅ Connected to MongoDB Cloud');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    // Retry after 5 seconds
+    console.log('Retrying MongoDB connection in 5 seconds...');
+    setTimeout(connectDB, 5000);
+  }
+};
+
+connectDB();
+
+// Handle connection events
+mongoose.connection.on('disconnected', () => {
+  console.log('MongoDB disconnected. Attempting reconnect...');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB error:', err.message);
 });
 
 // Define Schemas
