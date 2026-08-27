@@ -62,47 +62,47 @@ app.post('/api/ai/reset', requireAuth, aiController.resetAiContext);
 
 // Queue endpoints (sync state persistent on server)
 app.get('/api/queue', async (req, res) => {
-  res.json(await db.());
+  res.json(await db.getQueue());
 });
 
-app.post('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
+app.post('/api/queue', requireAuth, requireRole('operator'), async (req, res) => {
   const { verseData } = req.body;
   if (!verseData) return res.status(400).json({ error: 'verseData is required' });
-  const entry = await db.(verseData);
+  const entry = await db.addToQueue(verseData);
   res.status(201).json(entry);
 });
 
-app.put('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
+app.put('/api/queue', requireAuth, requireRole('operator'), async (req, res) => {
   const { queueList } = req.body;
   if (!Array.isArray(queueList)) return res.status(400).json({ error: 'queueList must be an array' });
-  const updated = await db.(queueList);
+  const updated = await db.updateQueue(queueList);
   res.json(updated);
 });
 
-app.delete('/api/queue/:id', requireAuth, requireRole('operator'), (req, res) => {
-  await db.(parseInt(req.params.id));
+app.delete('/api/queue/:id', requireAuth, requireRole('operator'), async (req, res) => {
+  await db.removeFromQueue(parseInt(req.params.id));
   res.json({ success: true });
 });
 
-app.delete('/api/queue', requireAuth, requireRole('operator'), (req, res) => {
-  await db.();
+app.delete('/api/queue', requireAuth, requireRole('operator'), async (req, res) => {
+  await db.clearQueue();
   res.json({ success: true });
 });
 
 // History endpoints
 app.get('/api/history', async (req, res) => {
-  res.json(await db.());
+  res.json(await db.getHistory());
 });
 
-app.post('/api/history', requireAuth, requireRole('operator'), (req, res) => {
+app.post('/api/history', requireAuth, requireRole('operator'), async (req, res) => {
   const { verseData, type } = req.body;
   if (!verseData) return res.status(400).json({ error: 'verseData is required' });
-  const entry = await db.(verseData, type);
+  const entry = await db.addToHistory(verseData, type);
   res.status(201).json(entry);
 });
 
-app.delete('/api/history', requireAuth, requireRole('operator'), (req, res) => {
-  await db.();
+app.delete('/api/history', requireAuth, requireRole('operator'), async (req, res) => {
+  await db.clearHistory();
   res.json({ success: true });
 });
 
@@ -166,11 +166,11 @@ io.on('connection', async (socket) => {
   socket.emit('SYNC_STATE', currentDisplayState);
   
   // Send active queue & history too
-  socket.emit('SYNC_QUEUE', await db.());
-  socket.emit('SYNC_HISTORY', await db.());
+  socket.emit('SYNC_QUEUE', await db.getQueue());
+  socket.emit('SYNC_HISTORY', await db.getHistory());
 
   // Listen for control events
-  const handleControlEvent = (event, payload) => {
+  const handleControlEvent = async (event, payload) => {
     // Verify permission
     if (!user || (user.role !== 'admin' && user.role !== 'operator')) {
       console.warn(`[Socket] Unauthorized emit attempt of ${event} from ${socket.id}`);
@@ -185,8 +185,8 @@ io.on('connection', async (socket) => {
       currentDisplayState.activeVerse = payload;
       // Automatically save to history on project
       if (payload) {
-        await db.(payload, 'MANUAL');
-        io.to(churchRoom).emit('SYNC_HISTORY', await db.());
+        await db.addToHistory(payload, 'MANUAL');
+        io.to(churchRoom).emit('SYNC_HISTORY', await db.getHistory());
       }
     } else if (event === 'CLEAR_SCREEN') {
       currentDisplayState.activeVerse = null;
